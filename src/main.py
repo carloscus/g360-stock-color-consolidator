@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -183,6 +185,16 @@ def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None):
     page.update()
 
 
+def _validar_archivo_source2(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(2000)
+        content = raw.decode("utf-8", errors="replace").lower()
+        return "<html" in content and "color" in content and "cantidad" in content
+    except Exception:
+        return False
+
+
 def _close_dlg(page: ft.Page, dlg: ft.AlertDialog, extra_cb=None):
     dlg.open = False
     page.update()
@@ -305,6 +317,7 @@ class StockConsolidatorApp:
         self._run_download_source2()
 
     def _run_download_source2(self):
+        download_dir: str | None = None
         os.environ["G360_S2_USER"] = self._creds.get("user", "")
         os.environ["G360_S2_PASS"] = self._creds.get("pass", "")
         self.dashboard.set_loading(True, "Descargando Source 2 (ERP)...")
@@ -316,11 +329,20 @@ class StockConsolidatorApp:
                 self.dashboard.set_loading(False)
                 self._show_toast("No se obtuvo archivo del servidor.")
                 return
+
+            download_dir = str(Path(path).parent)
+
             file_size = Path(path).stat().st_size
             if file_size < 100:
                 self.dashboard.set_loading(False)
                 self._show_toast(f"Archivo muy pequeno ({file_size} bytes). Revise logs.")
                 return
+
+            if not _validar_archivo_source2(path):
+                self.dashboard.set_loading(False)
+                self._show_toast("El archivo descargado no tiene el formato esperado del ERP.")
+                return
+
             self.dashboard.set_loading(True, "Procesando colores...")
             self.source2_data = parse_source2(path)
             if not self.source2_data:
@@ -341,6 +363,7 @@ class StockConsolidatorApp:
             _show_error(self.page, "Error al descargar Source 2", ex)
         finally:
             self.dashboard.set_loading(False)
+            self._limpiar_descarga(download_dir)
             self.page.update()
 
     def _on_sku_click(self, sku: str):
@@ -403,6 +426,13 @@ class StockConsolidatorApp:
         dlg.open = True
         self.page.update()
 
+    def _limpiar_descarga(self, download_dir: str | None):
+        if download_dir and "g360_s2_" in download_dir:
+            try:
+                shutil.rmtree(download_dir, ignore_errors=True)
+            except Exception:
+                pass
+
     def _load_cached_credentials(self) -> dict[str, str]:
         if CREDENTIALS_FILE.exists():
             try:
@@ -413,7 +443,8 @@ class StockConsolidatorApp:
 
     def _cache_credentials(self):
         CREDENTIALS_DIR.mkdir(parents=True, exist_ok=True)
-        CREDENTIALS_FILE.write_text(json.dumps(self._creds))
+        safe = {"user": self._creds.get("user", "")}
+        CREDENTIALS_FILE.write_text(json.dumps(safe))
 
     def _show_credentials_dialog(self, on_save_callback=None):
         hint_user = self._creds.get("user", "")

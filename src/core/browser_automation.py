@@ -9,9 +9,9 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 
-BASE_URL = os.environ.get("G360_S2_URL", "http://appweb.cipsa.com.pe:9091/")
-S2_USER = os.environ.get("G360_S2_USER", "CCUSI")
-S2_PASS = os.environ.get("G360_S2_PASS", "000000")
+BASE_URL = os.environ.get("G360_S2_URL", "")
+S2_USER = os.environ.get("G360_S2_USER", "")
+S2_PASS = os.environ.get("G360_S2_PASS", "")
 
 _log = logging.getLogger("s2_browser")
 

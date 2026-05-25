@@ -23,7 +23,6 @@ venv/
 
 # Logs
 *.log
-debug.log
 
 # OS
 Thumbs.db
@@ -33,4 +32,7 @@ Desktop.ini
 # Project specific
 samples/*.xls
 samples/*.xlsx
-__pycache__/
+
+# Portable version
+*-portable/
+run_log.txt
