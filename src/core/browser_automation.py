@@ -9,6 +9,23 @@ from pathlib import Path
 from playwright.sync_api import sync_playwright
 
 
+_dotenv_loaded = False
+def _cargar_env():
+    global _dotenv_loaded
+    if _dotenv_loaded:
+        return
+    _dotenv_loaded = True
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ.setdefault(key.strip(), val.strip().strip("\"'"))
+
+_cargar_env()
+
 BASE_URL = os.environ.get("G360_S2_URL", "")
 S2_USER = os.environ.get("G360_S2_USER", "")
 S2_PASS = os.environ.get("G360_S2_PASS", "")
