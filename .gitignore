@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+debug.log
+
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Project specific
+samples/*.xls
+samples/*.xlsx
+__pycache__/
