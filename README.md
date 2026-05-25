@@ -1,130 +1,144 @@
-# G360 Python Flet Desktop App
+# G360 Stock Color Consolidator
 
-## Estructura del Proyecto
+Consolida stock de colores desde el ERP (appweb.cipsa.com.pe) y genera reportes XLSX profesionales con disponibilidad por almacén y desglose por color/modelo.
 
-```
-mi-proyecto/
-├── src/
-│   ├── main.py              # Punto de entrada
-│   ├── test_app.py          # Tests con pytest
-│   └── core/
-│       └── skill.json       # Configuración del skill
-├── assets/
-│   └── images/
-│       └── app.ico          # Icono de la app
-├── portable/
-│   ├── build.bat            # Build portable EXE (sin Python)
-│   └── run.bat              # Run con Python (del sistema o UV)
-├── g360-nc-sustentor-portable/   # Copia para distribución
-├── g360/
-│   └── (estructura G360)
-├── requirements.txt
-├── create_shortcut.vbs      # Crear acceso directo
-└── README.md
-```
+## Características
 
-## Instalación
+- **Descarga automática** desde ERP (Source 1 + Source 2 vía Playwright)
+- **Carga manual** de archivos .xls/.xlsx (cuando no hay acceso al ERP)
+- **Consolidación** de stock, predespacho y colores por SKU
+- **Reporte XLSX** con dos hojas: "Con Color" y "Sin Color", con stock por almacén
+- **Dashboard interactivo** con filtros por SKU, alertas, almacén y tipo de color
+- **Progreso en vivo** durante la descarga (cada paso se muestra en la interfaz)
+- **Confirmación de re-descarga** para evitar descargas innecesarias
+- **Limpieza automática** de archivos temporales después del procesamiento
+- **Credenciales seguras**: la contraseña solo vive en memoria durante la sesión
+
+## Requisitos
+
+- Windows 10/11
+- Python 3.10+
+- Navegador Chromium (Playwright lo instala automáticamente)
+
+## Instalación (desarrollo)
 
 ```bash
+git clone https://github.com/carloscus/g360-stock-color-consolidator.git
+cd g360-stock-consolidator
+
+# Entorno virtual
+python -m venv .venv
+.venv\Scripts\activate
+
+# Dependencias
 pip install -r requirements.txt
+
+# Playwright browser
+playwright install chromium
 ```
 
-## Desarrollo
+## Configuración
+
+Copie `.env.example` como `.env` y ajuste los valores para su red local:
+
+```env
+G360_S2_URL=http://appweb.cipsa.com.pe:9091/
+```
+
+Si no usa `.env`, las variables se pueden definir como variables de entorno del sistema.
+
+## Uso
 
 ```bash
-python src/main.py
+python run.py
 ```
 
-## Tests
+### Flujo típico
 
-```bash
-pytest src/test_app.py -v
-pytest src/test_app.py --cov=src --cov-report=html
+1. **Login**: al abrir la app, ingrese usuario y contraseña del ERP
+2. **Descargar Source 1**: stock general desde el servidor
+3. **Descargar Source 2**: colores por SKU desde el ERP (automático con Playwright)
+4. **Explorar datos**: filtre por SKU, alertas, almacenes o tipo de color
+5. **Descargar reporte XLSX**: genera el consolidado en Excel
+
+### Carga manual
+
+Si no tiene acceso al ERP, use el botón 📂 para cargar manualmente un archivo
+`STOCK_MODELO_COLOR.xls` exportado previamente.
+
+## Versión Portable
+
+Para usuarios sin Python instalado, use la carpeta `g360-stock-consolidator-portable/`:
+
+```
+g360-stock-consolidator-portable/
+├── run.bat              ← Doble clic para ejecutar
+├── run.py
+├── requirements.txt
+├── pyproject.toml
+├── create_shortcut.vbs
+├── INSTRUCCIONES.txt
+└── src/
 ```
 
-## Dos Modalidades de Portable
+La primera ejecución descarga automáticamente **uv** + **Python 3.10** + dependencias.
+Solo requiere internet la primera vez.
 
-### Modalidad 1: Con Python (run.bat)
-Para PCs que tienen Python instalado o pueden instalarlo:
+## Arquitectura
 
-```bash
-run.bat
+```
+src/
+├── main.py                    # Punto de entrada, orquestación
+├── config/
+│   └── theme.py               # Paleta de colores (modo claro/oscuro)
+├── core/
+│   ├── parsers.py             # Parseo de HTML .xls del ERP
+│   ├── consolidator.py        # Consolidación stock + colores (pandas)
+│   ├── browser_automation.py  # Automatización Playwright (login + descarga)
+│   ├── downloader.py          # Descarga Source 1 vía HTTP
+│   ├── models.py              # Dataclasses (Producto, Color, Alerta)
+│   └── xls_fallback.py        # Lector legacy .xls con xlrd
+└── ui/
+    ├── dashboard.py           # Componentes de la interfaz Flet
+    ├── sku_detail.py          # Modal detalle de producto
+    └── logo.py                # Logo G360 en base64
 ```
 
-Esto:
-1. Detecta si hay Python en el sistema
-2. Si no hay, instala UV (gestor rápido)
-3. UV instala Python 3.10
-4. Crea entorno virtual
-5. Instala dependencias
-6. Crea acceso directo en escritorio
-7. Ejecuta la app
+## Stack
 
-### Modalidad 2: Sin Python (build-portable.bat)
-Para PCs que NO tienen Python - genera ejecutable standalone:
+| Capa | Tecnologia |
+|------|-----------|
+| UI | Flet (Python -> Flutter) |
+| Automatizacion | Playwright (Chromium) |
+| Procesamiento | pandas, openpyxl |
+| Parseo HTML | BeautifulSoup4, lxml |
+| Legacy .xls | xlrd |
 
-```bash
-cd portable
-build.bat
-```
+---
 
-Esto genera: `dist/G360App-Portable.exe`
+## 🌐 Familia G360
 
-El EXE funciona en cualquier PC con Windows sin necesidad de Python.
+Este proyecto forma parte de la familia de microherramientas **G360** para apoyo CRM y gestion de datos en escritorio, enfocadas en areas como ventas, finanzas y logistica.
 
-## Distribución a Clientes
+### Identidad Visual G360
 
-1. **Genera el portable EXE**:
-   ```bash
-   portable\build.bat
-   ```
+- **Isotipo**: 3 puntos verticales paralelos (gris-verde-gris) + chevron `>`
+- **Tipografia**: Monospace, uppercase para "G360"
+- **Marca**: G360 (no "G360 Ecosystem")
+- **Enfoque**: Microherramientas para apoyo CRM y datos en escritorio
+- **Familia**: Herramientas por area (Ventas, Finanzas, Logistica)
 
-2. **Copia la estructura**:
-   - Copia todo el proyecto a una carpeta `g360-nc-sustentor-portable`
-   - O simplemente entrega el EXE de `dist/`
+---
 
-3. **Entrega al cliente**:
-   - Solo necesita ejecutar `run.bat` (si tiene Python)
-   - O el `G360App-Portable.exe` (si no tiene Python)
+## Licencia
 
-## Lineamientos para el Agente Python
+MIT License
 
-### Para resolver problemas:
-1. Primero ejecuta los tests: `pytest src/test_app.py -v`
-2. Identifica el test que falla
-3. Reproduce el problema en el código
-4. Implementa la solución
-5. Verifica con tests
+---
 
-### Para cálculos y procesamiento:
-1. Usa la clase TestCalculations en test_app.py
-2. Agrega nuevos tests para funciones de cálculo
-3. Ejecuta: `pytest src/test_app.py::TestCalculations -v`
+**Marca**: G360
+**Isotipo**: 3 puntos verticales paralelos (gris-verde-gris) + chevron `>`
+**Autor**: Carlos Cusi
+**Desarrollo**: Con asistencia de herramientas de codigo IA (Vibe Code)
+**Powered by**: [g360-signature](https://github.com/carloscus/g360-signature)
 
-### Antes de subir a GitHub:
-```bash
-g360 clean . --github
-```
-Esto actualiza el .gitignore y prepara el repo para remoto.
-
-## Skills Disponibles
-
-- `flet-desktop` - Estilo G360 moderno para desktop
-- `flet-desktop-corporativo` - Estilo corporativo
-
-## Snippets Flet
-
-Usa los snippets de G360 para componentes rápidos:
-- `flet-page` - Configuración de página
-- `flet-card` - Tarjetas con estilo G360
-- `flet-button` - Botones G360
-- `flet-datatable` - Tablas de datos
-- `flet-dialog` - Diálogos modales
-- `flet-chart-bar` - Gráficos de barras
-
-## Notas del build portable
-
-- El ejecutable incluye todo el runtime de Python
-- Tamaño aproximado: 30-50 MB
-- Funciona en Windows 10/11 sin dependencias
-- El icono se puede personalizar en `assets/images/app.ico`
