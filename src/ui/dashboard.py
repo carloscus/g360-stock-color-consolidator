@@ -89,6 +89,8 @@ class Dashboard:
     def set_theme(self, modo: Modo):
         self.modo = modo
         self.p = DARK if modo == Modo.DARK else LIGHT
+        if self._loading_bar:
+            self._loading_bar.bgcolor = self.p.accent
 
     def set_loading(self, active: bool, message: str = ""):
         self._loading_bar.visible = active
@@ -194,18 +196,31 @@ class Dashboard:
                 [
                     ft.Image(
                         src_base64=logo_base64("dark" if self.modo == Modo.DARK else "light"),
-                        width=140, height=35, fit=ft.ImageFit.CONTAIN,
+                        width=105, height=35, fit=ft.ImageFit.CONTAIN,
                     ),
                     ft.Text("Stock Color Consolidator", size=18, weight=ft.FontWeight.BOLD, color=self.p.text),
                     ft.Container(expand=True),
                     ft.ElevatedButton(
                         "Descargar Source 1",
                         icon=ft.icons.CLOUD_DOWNLOAD_OUTLINED,
+                        style=ft.ButtonStyle(
+                            color={"": "#ffffff"},
+                            bgcolor={"": self.p.accent, "hovered": self.p.accent + "dd"},
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
                         on_click=self._on_load_source1,
                     ),
+                    ft.Container(width=6),
                     ft.ElevatedButton(
                         "Descargar Source 2",
                         icon=ft.icons.CLOUD_DOWNLOAD_OUTLINED,
+                        style=ft.ButtonStyle(
+                            color={"": "#ffffff"},
+                            bgcolor={"": self.p.accent, "hovered": self.p.accent + "dd"},
+                            shape=ft.RoundedRectangleBorder(radius=10),
+                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                        ),
                         on_click=self._on_load_source2,
                     ),
                     ft.IconButton(
@@ -230,13 +245,14 @@ class Dashboard:
                         tooltip="Descargar reporte XLSX",
                     ),
                     ft.IconButton(
-                        icon=ft.icons.DARK_MODE,
+                        icon=ft.icons.LIGHT_MODE if self.modo == Modo.DARK else ft.icons.DARK_MODE,
                         icon_size=20,
                         icon_color=self.p.text_secondary,
                         on_click=self._on_toggle_theme,
                     ),
                 ],
-                alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                spacing=0,
+                alignment=ft.MainAxisAlignment.START,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
             padding=ft.padding.symmetric(vertical=10),
@@ -258,6 +274,22 @@ class Dashboard:
 
     def _kpi_card(self, valor: int, label: str, icon: str, color: str, kpi_key: str) -> ft.Container:
         is_active = self._filtro_kpi == kpi_key
+        
+        if is_active:
+            card_border = ft.border.Border(
+                left=ft.BorderSide(width=4, color=self.p.accent),
+                top=ft.BorderSide(width=1, color=self.p.accent),
+                right=ft.BorderSide(width=1, color=self.p.accent),
+                bottom=ft.BorderSide(width=1, color=self.p.accent)
+            )
+        else:
+            card_border = ft.border.Border(
+                left=ft.BorderSide(width=4, color=color),
+                top=ft.BorderSide(width=1, color=self.p.glass_border),
+                right=ft.BorderSide(width=1, color=self.p.glass_border),
+                bottom=ft.BorderSide(width=1, color=self.p.glass_border)
+            )
+
         return ft.Container(
             content=ft.Row(
                 [
@@ -278,12 +310,13 @@ class Dashboard:
                 spacing=10,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            bgcolor=self.p.accent + "12" if is_active else self.p.glass_bg,
+            bgcolor=self.p.accent + "18" if is_active else self.p.glass_bg,
             border_radius=12,
-            border=ft.border.all(1, self.p.accent if is_active else self.p.glass_border),
+            border=card_border,
             padding=ft.padding.all(12),
             expand=True,
             on_click=lambda _, k=kpi_key: self._on_kpi_click(k),
+            blur=ft.Blur(sigma_x=8, sigma_y=8),
         )
 
     def _build_filters(self):
@@ -317,6 +350,7 @@ class Dashboard:
                                 border_radius=8,
                                 border=ft.border.all(1, self.p.glass_border),
                                 padding=ft.padding.only(left=10, right=10),
+                                blur=ft.Blur(sigma_x=10, sigma_y=10),
                             ),
                         ],
                     ),
@@ -344,11 +378,12 @@ class Dashboard:
             if code == "VES":
                 continue
             selected = code in self.selected_warehouses
+            is_dark = self.modo == Modo.DARK
             btns.append(
                 ft.Container(
                     content=ft.Text(code, size=11, weight=ft.FontWeight.BOLD,
-                                   color="#ffffff" if selected else self.p.text_secondary),
-                    bgcolor=self.p.accent if selected else "transparent",
+                                   color="#ffffff" if (selected and is_dark) else (self.p.accent if selected else self.p.text)),
+                    bgcolor=self.p.accent + "33" if (selected and is_dark) else (self.p.accent + "1e" if selected else "transparent"),
                     border=ft.border.all(1.5, self.p.accent if selected else self.p.border),
                     border_radius=14,
                     padding=ft.padding.only(left=10, right=10, top=4, bottom=4),
@@ -370,11 +405,12 @@ class Dashboard:
         btns = []
         for val, label in opts:
             sel = val == self.filtro_color
+            is_dark = self.modo == Modo.DARK
             btns.append(
                 ft.Container(
                     content=ft.Text(label, size=11, weight=ft.FontWeight.BOLD,
-                                   color="#ffffff" if sel else self.p.text_secondary),
-                    bgcolor=self.p.accent if sel else "transparent",
+                                   color="#ffffff" if (sel and is_dark) else (self.p.accent if sel else self.p.text)),
+                    bgcolor=self.p.accent + "33" if (sel and is_dark) else (self.p.accent + "1e" if sel else "transparent"),
                     border=ft.border.all(1.5, self.p.accent if sel else self.p.border),
                     border_radius=14,
                     padding=ft.padding.only(left=10, right=10, top=4, bottom=4),
@@ -429,8 +465,10 @@ class Dashboard:
     def _build_header_row(self):
         container = ft.Container(
             content=self._make_header_row(),
-            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-            border_radius=6,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            bgcolor=self.p.surface_hover,
+            border_radius=8,
+            border=ft.border.all(1, self.p.border),
         )
         self._header_container = container
         return container
@@ -467,13 +505,14 @@ class Dashboard:
     # ── Product list (accordion cards) ───────────────────────────────────
 
     def _build_product_list(self):
-        self.list_container = ft.Column(spacing=3, scroll=ft.ScrollMode.AUTO)
+        self.list_container = ft.Column(spacing=4, scroll=ft.ScrollMode.AUTO)
         return ft.Container(
             content=self.list_container,
-            border_radius=10,
+            border_radius=12,
             border=ft.border.all(1, self.p.glass_border),
-            bgcolor=self.p.glass_bg,
-            padding=ft.padding.all(4),
+            bgcolor=self.p.surface,
+            padding=ft.padding.all(6),
+            blur=ft.Blur(sigma_x=10, sigma_y=10),
         )
 
     def _build_pagination(self):
@@ -537,9 +576,16 @@ class Dashboard:
 
         card = ft.Container(
             content=row_content,
-            padding=ft.padding.symmetric(horizontal=6, vertical=7),
-            border_radius=5,
-            bgcolor=self.p.surface_hover if is_expanded else "transparent",
+            padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            border_radius=8,
+            border=ft.border.all(1, self.p.border),
+            bgcolor=self.p.surface_hover if is_expanded else self.p.surface,
+            shadow=ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=6,
+                color="rgba(15,23,42,0.03)" if self.modo == Modo.LIGHT else "rgba(0,0,0,0.25)",
+                offset=ft.Offset(0, 2),
+            ),
             on_click=lambda _, sku=p.sku: self._toggle_expand(sku),
             on_hover=lambda e: self._on_card_hover(e, p.sku),
         )
@@ -578,8 +624,23 @@ class Dashboard:
         return ft.Column(items, spacing=0)
 
     def _on_card_hover(self, e, sku: str):
-        base = self.p.surface_hover if sku in self.expanded else "transparent"
-        e.control.bgcolor = self.p.surface if e.data == "true" else base
+        is_expanded = sku in self.expanded
+        if e.data == "true":
+            e.control.bgcolor = self.p.surface_hover
+            e.control.shadow = ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=10,
+                color="rgba(15,23,42,0.08)" if self.modo == Modo.LIGHT else "rgba(0,0,0,0.4)",
+                offset=ft.Offset(0, 4),
+            )
+        else:
+            e.control.bgcolor = self.p.surface_hover if is_expanded else self.p.surface
+            e.control.shadow = ft.BoxShadow(
+                spread_radius=0,
+                blur_radius=6,
+                color="rgba(15,23,42,0.03)" if self.modo == Modo.LIGHT else "rgba(0,0,0,0.25)",
+                offset=ft.Offset(0, 2),
+            )
         self.page.update()
 
     def _toggle_expand(self, sku: str):
@@ -742,7 +803,24 @@ class Dashboard:
             col = row.controls[1]
             col.controls[0].value = str(val)
             is_active = self._filtro_kpi == key
-            card.bgcolor = self.p.accent + "12" if is_active else self.p.glass_bg
-            card.border = ft.border.all(1, self.p.accent if is_active else self.p.glass_border)
+            
+            color = row.controls[0].content.color
+            if is_active:
+                card_border = ft.border.Border(
+                    left=ft.BorderSide(width=4, color=self.p.accent),
+                    top=ft.BorderSide(width=1, color=self.p.accent),
+                    right=ft.BorderSide(width=1, color=self.p.accent),
+                    bottom=ft.BorderSide(width=1, color=self.p.accent)
+                )
+            else:
+                card_border = ft.border.Border(
+                    left=ft.BorderSide(width=4, color=color),
+                    top=ft.BorderSide(width=1, color=self.p.glass_border),
+                    right=ft.BorderSide(width=1, color=self.p.glass_border),
+                    bottom=ft.BorderSide(width=1, color=self.p.glass_border)
+                )
+                
+            card.bgcolor = self.p.accent + "18" if is_active else self.p.glass_bg
+            card.border = card_border
 
 

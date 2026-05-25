@@ -36,3 +36,6 @@ samples/*.xlsx
 # Portable version
 *-portable/
 run_log.txt
+
+# AI coding assistant
+.antigravitycli/

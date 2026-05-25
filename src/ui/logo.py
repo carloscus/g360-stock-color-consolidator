@@ -9,7 +9,7 @@ import cairosvg
 
 @lru_cache(maxsize=4)
 def _svg_to_b64(path: str) -> str:
-    png_bytes = cairosvg.svg2png(url=path, output_width=140, output_height=35)
+    png_bytes = cairosvg.svg2png(url=path, output_width=105, output_height=35)
     return base64.b64encode(png_bytes).decode()
 
 

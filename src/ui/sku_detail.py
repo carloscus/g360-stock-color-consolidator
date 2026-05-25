@@ -77,7 +77,9 @@ class SkuDetailModal:
         )
 
     def _stock_row(self):
-        def _chip(label: str, value: int, color: str):
+        def _chip(label: str, value: int, color: str, is_special=False, special_border_color=None):
+            bg = color + "12" if is_special else self.p.glass_bg
+            border_col = special_border_color if is_special else self.p.glass_border
             return ft.Container(
                 content=ft.Column(
                     [
@@ -87,11 +89,12 @@ class SkuDetailModal:
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=0,
                 ),
-                bgcolor=self.p.glass_bg,
+                bgcolor=bg,
                 border_radius=10,
-                border=ft.border.all(1, self.p.glass_border),
+                border=ft.border.all(1, border_col),
                 padding=ft.padding.symmetric(vertical=12, horizontal=20),
                 expand=True,
+                blur=ft.Blur(sigma_x=6, sigma_y=6),
             )
 
         disp_color = self.p.success if self.producto.disponible > 0 else self.p.danger
@@ -99,7 +102,7 @@ class SkuDetailModal:
             [
                 _chip("Stock Ref", self.producto.stock_referencial, self.p.info),
                 _chip("Predespacho", self.producto.predespacho_total, self.p.warning),
-                _chip("Disponible", self.producto.disponible, disp_color),
+                _chip("Disponible", self.producto.disponible, disp_color, is_special=True, special_border_color=disp_color),
             ],
             spacing=8,
         )
@@ -182,6 +185,7 @@ class SkuDetailModal:
             border_radius=10,
             border=ft.border.all(1, self.p.glass_border),
             padding=ft.padding.all(12),
+            blur=ft.Blur(sigma_x=8, sigma_y=8),
         )
 
     def _get_color_hex(self, nombre: str) -> str:
