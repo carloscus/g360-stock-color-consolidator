@@ -4,6 +4,12 @@ chcp 65001 >nul
 title G360 App
 cd /d "%~dp0"
 
+REM Si no se pasa "visible", relanzar minimizado
+if not "%1"=="visible" (
+    start /min cmd /c "%~dpnx0 visible"
+    exit /b 0
+)
+
 set LOG_FILE=run_log.txt
 echo [%DATE% %TIME%] > %LOG_FILE%
 
@@ -87,32 +93,30 @@ REM --------------------------
 echo [4/5] Instalando Chromium...
 set CHROMIUM_OK=0
 for /l %%i in (1,1,3) do (
-    echo [4/5] playwright (intento %%i de 3) >> %LOG_FILE%
+    echo [4/5] playwright ^(intento %%i de 3^) >> %LOG_FILE%
     if %%i==1 echo.
     echo    [%%i/3] Instalando Chromium...
     .venv\Scripts\python.exe -m playwright install chromium >> %LOG_FILE% 2>&1
     if !errorlevel! equ 0 (
         set CHROMIUM_OK=1
         echo    [%%i/3] Chromium instalado correctamente.
-        echo [4/5] playwright OK (intento %%i) >> %LOG_FILE%
+        echo [4/5] playwright OK ^(intento %%i^) >> %LOG_FILE%
         goto :chromium_ok
     )
-    echo    [%%i/3] Chromium: ERROR (revise run_log.txt para detalles)
-    echo [4/5] playwright ERROR (intento %%i) >> %LOG_FILE%
+    echo    [%%i/3] Chromium: ERROR - revise run_log.txt
+    echo [4/5] playwright ERROR ^(intento %%i^) >> %LOG_FILE%
     if %%i lss 3 (
         echo    Reintentando en 5 segundos...
         timeout /t 5 /nobreak >nul
     )
 )
 :chromium_ok
-if not %CHROMIUM_OK% equ 1 (
+if not "%CHROMIUM_OK%"=="1" (
     echo.
-    echo [4/5] ERROR: No se pudo instalar Chromium tras 3 intentos.
-    echo         Revise el archivo run_log.txt para mas detalles.
-    echo.
-    echo    Posibles causas:
-    echo    - Antivirus bloqueando la descarga
-    echo    - Sin conexion a internet
+    echo =============================================
+    echo   ERROR: No se pudo instalar Chromium
+    echo   Revise run_log.txt para detalles
+    echo =============================================
     echo.
     echo    Para instalar manualmente:
     echo    .venv\Scripts\python.exe -m playwright install chromium
@@ -170,6 +174,6 @@ echo   Esta ventana se cerrara en 5 segundos...
 echo ==============================================
 echo.
 
-start /b .venv\Scripts\python.exe src\main.py >> %LOG_FILE% 2>&1
-timeout /t 5 /nobreak >nul
+start "" /min .venv\Scripts\python.exe src\main.py >> %LOG_FILE% 2>&1
+timeout /t 3 /nobreak >nul
 exit
