@@ -148,6 +148,10 @@ def _friendly_error(ex: Exception) -> str:
     exc_type = type(ex).__name__
     if exc_type == "TimeoutError" or "Timeout" in exc_type or "timed out" in msg.lower():
         return "La conexión con el servidor no respondió a tiempo. Verifique su conexión a internet e intente nuevamente."
+    if "Credenciales incorrectas" in msg or "credenciales" in msg.lower():
+        return "Credenciales incorrectas o sin acceso al ERP. Verifique usuario y contraseña en el diálogo de credenciales."
+    if msg == "" or ("user" in msg.lower() and "pass" in msg.lower()):
+        return "Debe ingresar usuario y contraseña para descargar del ERP."
     if exc_type in ("ConnectionError", "ConnectionRefusedError", "ConnectionAbortedError", "ConnectionResetError"):
         return "No se pudo conectar al servidor. Verifique su conexión a internet o que el servidor esté disponible."
     if "ENOTFOUND" in msg or "getaddrinfo" in msg:
@@ -168,17 +172,35 @@ def _friendly_error(ex: Exception) -> str:
     return f"Error inesperado: {short}"
 
 
-def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None):
+def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retry_creds=None, on_manual_file=None):
     message = _friendly_error(ex)
+    is_cred = "credenciales" in message.lower()
+
+    def _change(e):
+        _close_dlg(page, dlg, None)
+        if callable(on_retry_creds):
+            on_retry_creds()
+
+    def _manual(e):
+        _close_dlg(page, dlg, None)
+        if callable(on_manual_file):
+            on_manual_file()
+
+    actions = [
+        ft.TextButton(
+            "OK",
+            on_click=lambda _: _close_dlg(page, dlg, close_cb),
+        ),
+    ]
+    if is_cred and on_retry_creds:
+        actions.insert(0, ft.ElevatedButton("Cambiar credenciales", on_click=_change))
+    if on_manual_file:
+        actions.insert(0, ft.TextButton("Cargar manualmente", on_click=_manual))
+
     dlg = ft.AlertDialog(
         title=ft.Text(title),
         content=ft.Text(message),
-        actions=[
-            ft.TextButton(
-                "OK",
-                on_click=lambda _: _close_dlg(page, dlg, close_cb),
-            ),
-        ],
+        actions=actions,
     )
     page.dialog = dlg
     dlg.open = True
@@ -360,7 +382,7 @@ class StockConsolidatorApp:
         except Exception as ex:
             import traceback
             traceback.print_exc()
-            _show_error(self.page, "Error al descargar Source 2", ex)
+            _show_error(self.page, "Error al descargar Source 2", ex, on_retry_creds=self._show_credentials_dialog, on_manual_file=self._pick_file)
         finally:
             self.dashboard.set_loading(False)
             self._limpiar_descarga(download_dir)

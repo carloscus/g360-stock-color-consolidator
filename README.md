@@ -13,12 +13,14 @@ Consolida stock de colores desde el ERP (appweb.cipsa.com.pe) y genera reportes 
 - **Confirmación de re-descarga** para evitar descargas innecesarias
 - **Limpieza automática** de archivos temporales después del procesamiento
 - **Credenciales seguras**: la contraseña solo vive en memoria durante la sesión
+- **Sin dependencias nativas**: no requiere Cairo/GTK ni VC++ Redistributable (Flet incluye sus propios DLLs)
 
 ## Requisitos
 
 - Windows 10/11
 - Python 3.10+
 - Navegador Chromium (Playwright lo instala automáticamente)
+- Conexión a internet (solo la primera vez para dependencias)
 
 ## Instalación (desarrollo)
 
@@ -26,11 +28,14 @@ Consolida stock de colores desde el ERP (appweb.cipsa.com.pe) y genera reportes 
 git clone https://github.com/carloscus/g360-stock-color-consolidator.git
 cd g360-stock-consolidator
 
-# Entorno virtual
+# Opción A: con uv (recomendado)
+uv venv .venv --python 3.10 --seed
+.venv\Scripts\activate
+uv pip install -r requirements.txt
+
+# Opción B: con pip estándar
 python -m venv .venv
 .venv\Scripts\activate
-
-# Dependencias
 pip install -r requirements.txt
 
 # Playwright browser
@@ -55,11 +60,19 @@ python run.py
 
 ### Flujo típico
 
-1. **Login**: al abrir la app, ingrese usuario y contraseña del ERP
-2. **Descargar Source 1**: stock general desde el servidor
+1. **Credenciales**: al abrir la app, ingrese usuario y contraseña del ERP (la contraseña no se guarda)
+2. **Descargar Source 1**: stock general desde el servidor HTTP
 3. **Descargar Source 2**: colores por SKU desde el ERP (automático con Playwright)
 4. **Explorar datos**: filtre por SKU, alertas, almacenes o tipo de color
 5. **Descargar reporte XLSX**: genera el consolidado en Excel
+
+### Manejo de errores de credenciales
+
+Si el login al ERP falla, el diálogo de error ofrece tres opciones:
+
+- **Cargar manualmente** → abre el selector de archivos para elegir un XLS descargado previamente
+- **Cambiar credenciales** → abre el diálogo para corregir usuario/contraseña
+- **OK** → cierra el mensaje para reintentar manualmente
 
 ### Carga manual
 
@@ -72,7 +85,7 @@ Para usuarios sin Python instalado, use la carpeta `g360-stock-consolidator-port
 
 ```
 g360-stock-consolidator-portable/
-├── run.bat              ← Doble clic para ejecutar
+├── run.bat              ← Doble clic para ejecutar (auto-instala todo)
 ├── run.py
 ├── requirements.txt
 ├── pyproject.toml
@@ -81,8 +94,16 @@ g360-stock-consolidator-portable/
 └── src/
 ```
 
-La primera ejecución descarga automáticamente **uv** + **Python 3.10** + dependencias.
-Solo requiere internet la primera vez.
+La primera ejecución:
+1. Descarga **uv** portable desde GitHub (ZIP directo, sin `iex`)
+2. Crea entorno virtual con **Python 3.10**
+3. Instala dependencias
+4. Descarga **Chromium** (con hasta 3 reintentos automáticos)
+5. Verifica la instalación antes de lanzar la app
+
+Incluye `.env.example` con la URL del ERP. Copie como `.env` si necesita personalizar.
+
+No requiere VC++ Redistributable — `run.bat` agrega los DLLs de Flet al PATH automáticamente.
 
 ## Arquitectura
 
@@ -108,11 +129,12 @@ src/
 
 | Capa | Tecnologia |
 |------|-----------|
-| UI | Flet (Python -> Flutter) |
+| UI | Flet (Python -> Flutter, logo PNG base64 embebido) |
 | Automatizacion | Playwright (Chromium) |
 | Procesamiento | pandas, openpyxl |
 | Parseo HTML | BeautifulSoup4, lxml |
 | Legacy .xls | xlrd |
+| Launcher portable | uv (auto-descarga), sin dependencias nativas DLL |
 
 ---
 

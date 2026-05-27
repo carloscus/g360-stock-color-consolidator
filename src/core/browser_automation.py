@@ -26,9 +26,14 @@ def _cargar_env():
 
 _cargar_env()
 
-BASE_URL = os.environ.get("G360_S2_URL", "")
-S2_USER = os.environ.get("G360_S2_USER", "")
-S2_PASS = os.environ.get("G360_S2_PASS", "")
+def _get_url() -> str:
+    return os.environ.get("G360_S2_URL", "http://appweb.cipsa.com.pe:9091/")
+
+def _get_user() -> str:
+    return os.environ.get("G360_S2_USER", "")
+
+def _get_pass() -> str:
+    return os.environ.get("G360_S2_PASS", "")
 
 _log = logging.getLogger("s2_browser")
 
@@ -52,7 +57,11 @@ def download_source2(
 
     def log(msg: str):
         _log.info(msg)
-        print(f"[s2] {msg}", flush=True)
+        try:
+            print(f"[s2] {msg}", flush=True)
+        except UnicodeEncodeError:
+            safe = msg.encode("ascii", errors="replace").decode("ascii")
+            print(f"[s2] {safe}", flush=True)
 
     def progress(msg: str):
         if callable(progress_callback):
@@ -74,12 +83,24 @@ def download_source2(
             # ── 1. Login ───────────────────────────────────────────────
             log("1. Login")
             progress("Iniciando sesión en ERP...")
-            page.goto(BASE_URL)
-            page.locator("#Codigo").fill(S2_USER)
-            page.locator("#contrasena").fill(S2_PASS)
+            page.goto(_get_url())
+            page.locator("#Codigo").fill(_get_user())
+            page.locator("#contrasena").fill(_get_pass())
             page.keyboard.press("Enter")
             page.wait_for_load_state("networkidle")
             dbg("01_login")
+
+            # detect login failure: if URL didn't change from login page
+            url_after = page.url.rstrip("/")
+            login_url = _get_url().rstrip("/")
+            same_page = url_after == login_url
+            codigo_visible = page.locator("#Codigo").is_visible()
+            if same_page and codigo_visible:
+                log(f"1x. Login fallo — misma URL y formulario visible ({url_after})")
+                raise ValueError(
+                    "Credenciales incorrectas o sin acceso al ERP.\n"
+                    "Verifique usuario y contraseña en el diálogo de credenciales."
+                )
 
             # ── 2. Select company: ALMACENES ────────────────────────────
             log("2. Seleccionar empresa ALMACENES")
@@ -90,7 +111,7 @@ def download_source2(
             dbg("02_empresa")
 
             # ── 3. Navigate menu ────────────────────────────────────────
-            log("3. Navegar menu 317→322→501")
+            log("3. Navegar menu 317 -> 322 -> 501")
             progress("Navegando menú...")
             page.locator('[id="317"] > a > b').click()
             page.wait_for_timeout(400)

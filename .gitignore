@@ -39,3 +39,6 @@ run_log.txt
 
 # AI coding assistant
 .antigravitycli/
+
+# Temporary generated files
+assets/images/*_b64.txt
