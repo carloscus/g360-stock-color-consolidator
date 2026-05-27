@@ -14,6 +14,7 @@ Consolida stock de colores desde el ERP (appweb.cipsa.com.pe) y genera reportes 
 - **Limpieza automática** de archivos temporales después del procesamiento
 - **Credenciales seguras**: la contraseña solo vive en memoria durante la sesión
 - **Sin dependencias nativas**: no requiere Cairo/GTK ni VC++ Redistributable (Flet incluye sus propios DLLs)
+- **Flet pinneado a 0.21.2**: evita breaking changes de versiones superiores
 
 ## Requisitos
 
@@ -41,6 +42,8 @@ pip install -r requirements.txt
 # Playwright browser
 playwright install chromium
 ```
+
+> **Nota:** `flet==0.21.2` y `playwright==1.60.0` están pinneados en `requirements.txt` para evitar breaking changes.
 
 ## Configuración
 
@@ -97,13 +100,11 @@ g360-stock-consolidator-portable/
 La primera ejecución:
 1. Descarga **uv** portable desde GitHub (ZIP directo, sin `iex`)
 2. Crea entorno virtual con **Python 3.10**
-3. Instala dependencias
+3. Instala dependencias (flet 0.21.2, playwright 1.60.0, requests, etc.)
 4. Descarga **Chromium** (con hasta 3 reintentos automáticos)
-5. Verifica la instalación antes de lanzar la app
+5. Verifica la importación de todos los paquetes antes de lanzar la app
 
-Incluye `.env.example` con la URL del ERP. Copie como `.env` si necesita personalizar.
-
-No requiere VC++ Redistributable — `run.bat` agrega los DLLs de Flet al PATH automáticamente.
+`run.bat` se auto-minimiza al iniciar, muestra un log discreto con 5 pasos, y se cierra automáticamente cuando la app finaliza. Si hay errores, la ventana se pausa y se puede revisar `run_log.txt`.
 
 ## Arquitectura
 
