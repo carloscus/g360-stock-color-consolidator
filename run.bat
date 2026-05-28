@@ -74,9 +74,12 @@ call :SetupPythonWithUV
 :: ============================================
 :RunApp
 call :SetupVenv
+if errorlevel 1 exit /b 1
 call :InstallDependencies
+if errorlevel 1 exit /b 1
 call :InstallChromium
 call :VerifyImports
+if errorlevel 1 exit /b 1
 call :LogMsg "OK" "Iniciando aplicacion..."
 
 set "FLET_BIN=%~dp0.venv\Lib\site-packages\flet\bin"
@@ -112,12 +115,7 @@ if not exist "uv.exe" (
     exit /b 1
 )
 set "PATH=%~dp0;%PATH%"
-call :LogMsg "INFO" "uv.exe detectado, instalando Python..."
-uv python install 3.10 2>> %LOG_FILE%
-if errorlevel 1 (
-    call :LogMsg "WARN" "Fallback a Python 3.11..."
-    uv venv .venv --python 3.11 --seed >> %LOG_FILE% 2>&1
-)
+call :LogMsg "INFO" "uv.exe detectado, listo para crear entorno virtual"
 goto :eof
 
 :SetupVenv
@@ -129,7 +127,9 @@ if errorlevel 1 (
     uv venv .venv --python 3.11 --seed >> %LOG_FILE% 2>&1
     if errorlevel 1 uv venv .venv --python 3.12 --seed >> %LOG_FILE% 2>&1
 )
-goto :eof
+if exist ".venv\Scripts\python.exe" goto :eof
+call :LogMsg "ERROR" "No se pudo crear el entorno virtual con ninguna version de Python"
+exit /b 1
 
 :InstallDependencies
 call :LogMsg "STEP" "Instalando dependencias..."
