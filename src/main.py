@@ -1,3 +1,4 @@
+"""G360 Stock Color Consolidator - Aplicacion principal."""
 from __future__ import annotations
 
 import json
@@ -11,12 +12,16 @@ import flet as ft
 from openpyxl import Workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+
+# Core imports
 from src.config.theme import LIGHT, DARK, Modo
 from src.core.parsers import parse_source2, agregar_almacenes
 from src.core.consolidator import consolidar
 from src.core.downloader import download_source1
 from src.core.browser_automation import download_source2 as browser_download_source2
 from src.core.models import ProductoConsolidado
+
+# UI imports
 from src.ui.dashboard import Dashboard
 from src.ui.sku_detail import SkuDetailModal
 
@@ -259,6 +264,7 @@ class StockConsolidatorApp:
         self.dashboard.set_on_theme_toggle(self._on_theme_toggle)
         self.dashboard.set_on_download_report(self._on_download_report)
         self.dashboard.set_on_credentials(self._show_credentials_dialog)
+        self.dashboard.set_on_expand_all(self._on_expand_all)
         self.dashboard.set_on_load_source(
             self._on_download_source1,
             self._on_download_source2,
@@ -271,11 +277,18 @@ class StockConsolidatorApp:
         self.page.overlay.append(self._save_picker)
 
         view = self.dashboard.build()
-        self.dashboard.set_productos(self.productos)
 
         self.page.clean()
         self.page.add(view)
+        
+        # Cargamos productos
+        self.dashboard.set_productos(self.productos)
         self.page.update()
+
+    def _on_expand_all(self, expand: bool):
+        if self.dashboard:
+            if hasattr(self.dashboard, "expand_all"):
+                self.dashboard.expand_all(expand)
 
     def _on_theme_toggle(self):
         self.modo = Modo.DARK if self.modo == Modo.LIGHT else Modo.LIGHT
@@ -446,6 +459,8 @@ class StockConsolidatorApp:
         )
         self.page.dialog = dlg
         dlg.open = True
+        # Usamos update del diálogo específicamente si es posible, 
+        # o aseguramos el update de la página.
         self.page.update()
 
     def _limpiar_descarga(self, download_dir: str | None):

@@ -24,6 +24,8 @@ class Dashboard:
         self.pag_row: ft.Row | None = None
         self.status_text: ft.Text | None = None
         self.expanded: set[str] = set()
+        self.all_expanded = False
+        self._on_expand_all_cb = None
         self._header_controls: list[ft.Control] = []
         self._header_container: ft.Container | None = None
         self._filtro_kpi = None
@@ -43,6 +45,12 @@ class Dashboard:
         self.warehouse_btns: list[ft.Container] = []
         self.warehouse_row: ft.Row | None = None
         self._loading_text = ft.Text("Procesando...", size=13, color="#ffffff")
+        self._loading_progress = ft.ProgressBar(
+            color="#ffffff",
+            bgcolor="#ffffff33",
+            width=300,
+            value=0.0,
+        )
         self._loading_bar = ft.Container(
             visible=False,
             content=ft.Column(
@@ -54,7 +62,7 @@ class Dashboard:
                         ],
                         spacing=8,
                     ),
-                    ft.ProgressBar(color="#ffffff", bgcolor="ffffff33"),
+                    self._loading_progress,
                 ],
                 spacing=4,
             ),
@@ -81,6 +89,18 @@ class Dashboard:
         self._on_load_s2 = s2_cb
         self._on_load_s2_manual = s2_manual_cb
 
+    def set_on_expand_all(self, callback):
+        self._on_expand_all_cb = callback
+
+    def expand_all(self, expand: bool):
+        self.all_expanded = expand
+        if expand:
+            for p in self.productos_filtrados:
+                self.expanded.add(p.sku)
+        else:
+            self.expanded.clear()
+        self._refresh_list()
+
     def set_source1_raw(self, data: dict[str, dict[str, dict]]):
         self.source1_raw = data
         self.selected_warehouses = set()
@@ -92,13 +112,34 @@ class Dashboard:
         if self._loading_bar:
             self._loading_bar.bgcolor = self.p.accent
 
-    def set_loading(self, active: bool, message: str = ""):
+    def set_loading(self, active: bool, message: str = "", progress: float | None = None):
         self._loading_bar.visible = active
         if message:
             self._loading_text.value = message
+        if progress is not None:
+            self._loading_progress.value = max(0.0, min(1.0, progress))
+        if active and self.overlay_loading not in self.page.overlay:
+            self.page.overlay.append(self.overlay_loading)
+        elif not active and self.overlay_loading in self.page.overlay:
+            self.page.overlay.remove(self.overlay_loading)
         self.page.update()
 
-    # ── Column definitions shared by header & cards ──────────────────────
+    def _init_overlay_loading(self):
+        """Crea overlay de carga centrado - no ocupa espacio en layout principal."""
+        self.overlay_loading = ft.Container(
+            content=ft.Column(
+                [ft.Container(expand=True), self._loading_bar, ft.Container(expand=True)],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+            bgcolor="rgba(0,0,0,0.6)",
+            visible=False,
+            expand=True,
+            padding=20,
+            alignment=ft.alignment.center,
+        )
+
+    # Column definitions shared by header & cards
+    # ...
 
     def _col_labels(self) -> list[str]:
         labels = ["#", "SKU", "Artículo", "Stock", "Predesp", "Disponible"]
@@ -151,9 +192,9 @@ class Dashboard:
             width=80,
         )
 
-    # ── Build ────────────────────────────────────────────────────────────
-
     def build(self) -> ft.Container:
+        # Initialize overlay loading (centrado, no ocupa espacio en layout)
+        self._init_overlay_loading()
         self.search_field = ft.TextField(
             hint_text="Buscar SKU o descripcion...",
             prefix_icon=ft.icons.SEARCH,
@@ -172,11 +213,13 @@ class Dashboard:
             color=self.p.text_secondary,
         )
 
+        # Initialize overlay loading (centrado, no ocupa espacio en layout)
+        self._init_overlay_loading()
+
         return ft.Container(
             content=ft.Column(
                 [
                     self._build_header(),
-                    self._loading_bar,
                     self._build_kpi_cards(),
                     self._build_filters(),
                     self._build_header_row(),
@@ -198,28 +241,28 @@ class Dashboard:
                         src_base64=logo_base64("dark" if self.modo == Modo.DARK else "light"),
                         width=105, height=35, fit=ft.ImageFit.CONTAIN,
                     ),
-                    ft.Text("Stock Color Consolidator", size=18, weight=ft.FontWeight.BOLD, color=self.p.text),
+                    ft.Text("Stock Consolidator", size=20, weight=ft.FontWeight.BOLD, color=self.p.text),
                     ft.Container(expand=True),
                     ft.ElevatedButton(
-                        "Descargar Source 1",
+                        "S1 - Stock",
                         icon=ft.icons.CLOUD_DOWNLOAD_OUTLINED,
                         style=ft.ButtonStyle(
                             color={"": "#ffffff"},
-                            bgcolor={"": self.p.accent, "hovered": self.p.accent + "dd"},
+                            bgcolor={"": "#1B3A5C", "hovered": "#244b75"},
                             shape=ft.RoundedRectangleBorder(radius=10),
-                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                            padding=ft.padding.symmetric(horizontal=16, vertical=12),
                         ),
                         on_click=self._on_load_source1,
                     ),
                     ft.Container(width=6),
                     ft.ElevatedButton(
-                        "Descargar Source 2",
+                        "S2 - Color",
                         icon=ft.icons.CLOUD_DOWNLOAD_OUTLINED,
                         style=ft.ButtonStyle(
                             color={"": "#ffffff"},
-                            bgcolor={"": self.p.accent, "hovered": self.p.accent + "dd"},
+                            bgcolor={"": "#2C3E50", "hovered": "#34495e"},
                             shape=ft.RoundedRectangleBorder(radius=10),
-                            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                            padding=ft.padding.symmetric(horizontal=16, vertical=12),
                         ),
                         on_click=self._on_load_source2,
                     ),
@@ -261,12 +304,13 @@ class Dashboard:
     def _build_kpi_cards(self):
         kpi_data = self._calcular_kpis()
         cards = ft.Row(
-            spacing=10,
+            spacing=12,
             controls=[
-                self._kpi_card(kpi_data["total_skus"], "Total SKUs", ft.icons.CATEGORY, self.p.info, "total"),
                 self._kpi_card(kpi_data["con_stock"], "Con Stock", ft.icons.CHECK_CIRCLE_OUTLINE, self.p.success, "con_stock"),
-                self._kpi_card(kpi_data["bajo_stock"], "Bajo / Alerta", ft.icons.WARNING_AMBER_OUTLINED, self.p.warning, "bajo_stock"),
-                self._kpi_card(kpi_data["sin_disponible"], "Disp = 0", ft.icons.SCHEDULE, self.p.danger, "sin_disponible"),
+                self._kpi_card(kpi_data["bajo_stock"], "Alertas", ft.icons.WARNING_AMBER_OUTLINED, self.p.warning, "bajo_stock"),
+                self._kpi_card(kpi_data["sin_disponible"], "Disp 0", ft.icons.SCHEDULE, self.p.danger, "sin_disponible"),
+                self._kpi_card(kpi_data["w121_total"], "Alm 121", ft.icons.WAREHOUSE, "#9C27B0", "w121"),
+                self._kpi_card(kpi_data["total_skus"], "Total", ft.icons.CATEGORY, self.p.accent, "total"),
             ],
         )
         self.kpi_row = cards
@@ -275,54 +319,54 @@ class Dashboard:
     def _kpi_card(self, valor: int, label: str, icon: str, color: str, kpi_key: str) -> ft.Container:
         is_active = self._filtro_kpi == kpi_key
         
-        if is_active:
-            card_border = ft.border.Border(
-                left=ft.BorderSide(width=4, color=self.p.accent),
-                top=ft.BorderSide(width=1, color=self.p.accent),
-                right=ft.BorderSide(width=1, color=self.p.accent),
-                bottom=ft.BorderSide(width=1, color=self.p.accent)
-            )
-        else:
-            card_border = ft.border.Border(
-                left=ft.BorderSide(width=4, color=color),
-                top=ft.BorderSide(width=1, color=self.p.glass_border),
-                right=ft.BorderSide(width=1, color=self.p.glass_border),
-                bottom=ft.BorderSide(width=1, color=self.p.glass_border)
-            )
-
+        bg_color = self.p.accent + "22" if is_active else self.p.glass_bg
+        
         return ft.Container(
             content=ft.Row(
                 [
                     ft.Container(
-                        content=ft.Icon(icon, size=18, color=color),
-                        bgcolor=color + "18",
-                        border_radius=8,
-                        padding=8,
+                        content=ft.Icon(icon, size=22, color=color),
+                        bgcolor=color + "22",
+                        border_radius=12,
+                        padding=12,
                     ),
                     ft.Column(
                         [
-                            ft.Text(str(valor), size=18, weight=ft.FontWeight.BOLD, color=self.p.text),
-                            ft.Text(label, size=12, color=self.p.text_secondary),
+                            ft.Text(str(valor), size=24, weight=ft.FontWeight.BOLD, color=self.p.text),
+                            ft.Text(label, size=13, color=self.p.text_secondary, weight=ft.FontWeight.W_500),
                         ],
-                        spacing=1,
+                        spacing=2,
+                        expand=True,
                     ),
                 ],
-                spacing=10,
+                spacing=14,
                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
             ),
-            bgcolor=self.p.accent + "18" if is_active else self.p.glass_bg,
-            border_radius=12,
-            border=card_border,
-            padding=ft.padding.all(12),
+            bgcolor=bg_color,
+            border_radius=14,
+            border=ft.border.all(1.5, self.p.accent if is_active else self.p.glass_border),
+            padding=ft.padding.all(16),
             expand=True,
             on_click=lambda _, k=kpi_key: self._on_kpi_click(k),
-            blur=ft.Blur(sigma_x=8, sigma_y=8),
         )
 
     def _build_filters(self):
         self._color_filter_btns = None
         self.warehouse_row = ft.Row(spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
         self._build_warehouse_buttons()
+
+        self._toggle_expand_btn = ft.IconButton(
+            icon=ft.icons.UNFOLD_MORE if not self.all_expanded else ft.icons.UNFOLD_LESS,
+            icon_size=18,
+            icon_color=self.p.accent,
+            style=ft.ButtonStyle(
+                bgcolor=self.p.surface_hover,
+                shape=ft.RoundedRectangleBorder(radius=8),
+            ),
+            on_click=self._on_toggle_expand_all,
+            tooltip="Expandir/Contraer todo",
+        )
+
         return ft.Column(
             spacing=6,
             controls=[
@@ -330,7 +374,15 @@ class Dashboard:
                     content=ft.Row(
                         [
                             self.search_field,
-                            ft.Container(width=8),
+                            ft.Container(width=10),
+                            ft.Container(
+                                content=self._toggle_expand_btn,
+                                bgcolor=self.p.surface,
+                                border_radius=8,
+                                border=ft.border.all(1, self.p.glass_border),
+                                padding=2,
+                            ),
+                            ft.Container(width=10),
                             ft.Container(
                                 content=ft.Row(
                                     [
@@ -350,7 +402,6 @@ class Dashboard:
                                 border_radius=8,
                                 border=ft.border.all(1, self.p.glass_border),
                                 padding=ft.padding.only(left=10, right=10),
-                                blur=ft.Blur(sigma_x=10, sigma_y=10),
                             ),
                         ],
                     ),
@@ -512,7 +563,6 @@ class Dashboard:
             border=ft.border.all(1, self.p.glass_border),
             bgcolor=self.p.surface,
             padding=ft.padding.all(6),
-            blur=ft.Blur(sigma_x=10, sigma_y=10),
         )
 
     def _build_pagination(self):
@@ -737,6 +787,8 @@ class Dashboard:
             )]
         elif self._filtro_kpi == "sin_disponible":
             filtered = [p for p in filtered if p.disponible == 0 and p.stock_referencial > 0]
+        elif self._filtro_kpi == "w121":
+            filtered = [p for p in filtered if self._warehouse_disp("121", p.sku) > 0]
         self.productos_filtrados = filtered
 
     def _on_search_change(self, e):
@@ -755,6 +807,18 @@ class Dashboard:
         else:
             self._filtro_kpi = kpi_key
         self.current_page = 0
+        self._refresh_list()
+
+    def _on_toggle_expand_all(self, e):
+        self.all_expanded = not self.all_expanded
+        if self.all_expanded:
+            for p in self.productos_filtrados:
+                self.expanded.add(p.sku)
+        else:
+            self.expanded.clear()
+        if hasattr(self, '_toggle_expand_btn') and self._toggle_expand_btn:
+            self._toggle_expand_btn.icon = ft.icons.UNFOLD_LESS if self.all_expanded else ft.icons.UNFOLD_MORE
+            self._toggle_expand_btn.update()
         self._refresh_list()
 
     def _on_toggle_theme(self, e):
@@ -784,43 +848,30 @@ class Dashboard:
             a.severidad in (AlertaSeveridad.ALTA, AlertaSeveridad.MEDIA) for a in p.alertas
         ))
         sin_disp = sum(1 for p in self.productos_filtrados if p.disponible == 0 and p.stock_referencial > 0)
+        w121 = sum(1 for p in self.productos_filtrados 
+                   if self._warehouse_disp("121", p.sku) > 0)
         return {
             "total_skus": total,
             "con_stock": con_stock,
             "bajo_stock": bajo,
             "sin_disponible": sin_disp,
+            "w121_total": w121,
         }
 
     def _rebuild_kpis(self):
-        if not self.kpi_row or len(self.kpi_row.controls) != 4:
+        if not self.kpi_row or len(self.kpi_row.controls) != 5:
             return
         kpi = self._calcular_kpis()
-        keys = ["total", "con_stock", "bajo_stock", "sin_disponible"]
-        values = [kpi["total_skus"], kpi["con_stock"], kpi["bajo_stock"], kpi["sin_disponible"]]
+        keys = ["con_stock", "bajo_stock", "sin_disponible", "w121", "total"]
+        values = [kpi["con_stock"], kpi["bajo_stock"], kpi["sin_disponible"], kpi["w121_total"], kpi["total_skus"]]
         for i, (val, key) in enumerate(zip(values, keys)):
             card = self.kpi_row.controls[i]
             row = card.content
             col = row.controls[1]
             col.controls[0].value = str(val)
             is_active = self._filtro_kpi == key
-            
-            color = row.controls[0].content.color
-            if is_active:
-                card_border = ft.border.Border(
-                    left=ft.BorderSide(width=4, color=self.p.accent),
-                    top=ft.BorderSide(width=1, color=self.p.accent),
-                    right=ft.BorderSide(width=1, color=self.p.accent),
-                    bottom=ft.BorderSide(width=1, color=self.p.accent)
-                )
-            else:
-                card_border = ft.border.Border(
-                    left=ft.BorderSide(width=4, color=color),
-                    top=ft.BorderSide(width=1, color=self.p.glass_border),
-                    right=ft.BorderSide(width=1, color=self.p.glass_border),
-                    bottom=ft.BorderSide(width=1, color=self.p.glass_border)
-                )
-                
-            card.bgcolor = self.p.accent + "18" if is_active else self.p.glass_bg
-            card.border = card_border
+            card.bgcolor = self.p.accent + "22" if is_active else self.p.glass_bg
+            card.border = ft.border.all(1.5, self.p.accent if is_active else self.p.glass_border)
+        self.page.update()
 
 
