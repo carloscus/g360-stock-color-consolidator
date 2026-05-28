@@ -9,9 +9,6 @@ from datetime import datetime
 from pathlib import Path
 
 import flet as ft
-from openpyxl import Workbook
-from openpyxl.cell.cell import MergedCell
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
 # Core imports
 from src.config.theme import LIGHT, DARK, Modo
@@ -20,6 +17,15 @@ from src.core.consolidator import consolidar
 from src.core.downloader import download_source1
 from src.core.browser_automation import download_source2 as browser_download_source2
 from src.core.models import ProductoConsolidado
+from src.core.constants import (
+    WINDOW_WIDTH,
+    WINDOW_HEIGHT,
+    WINDOW_MIN_WIDTH,
+    WINDOW_MIN_HEIGHT,
+    TEMP_DIR_PREFIX,
+)
+from src.core.errors import friendly_error
+from src.core.report import generar_reporte_xlsx
 
 # UI imports
 from src.ui.dashboard import Dashboard
@@ -29,156 +35,25 @@ CREDENTIALS_DIR = Path(os.environ.get("APPDATA", Path.home())) / "g360-stock-con
 CREDENTIALS_FILE = CREDENTIALS_DIR / "creds.json"
 
 
-def _generar_reporte_xlsx(
-    productos: list[ProductoConsolidado],
-    path: str,
-    source1_raw: dict[str, dict[str, dict]] | None = None,
-):
-    wb = Workbook()
-
-    warehouses = sorted(
-        c for c in (source1_raw or {}).keys() if c != "VES"
-    )
-
-    username = os.environ.get("G360_S2_USER", "")
-    today_str = datetime.now().strftime("%d/%m/%Y")
-
-    def _warehouse_vals(sku: str) -> list:
-        if not source1_raw:
-            return [None] * len(warehouses)
-        return [
-            max(0, source1_raw.get(w, {}).get(sku, {}).get("stock", 0)
-                - source1_raw.get(w, {}).get(sku, {}).get("predespacho", 0))
-            or None
-            for w in warehouses
-        ]
-
-    def _has_real_color(p: ProductoConsolidado) -> bool:
-        return any(c.nombre != "SIN COLOR" for c in p.colores)
-
-    # ── Styles ─────────────────────────────────────────────────────────
-    title_font = Font(bold=True, size=14, color="ffffff")
-    title_fill = PatternFill(start_color="1B3A5C", end_color="1B3A5C", fill_type="solid")
-    header_font = Font(bold=True, size=11, color="ffffff")
-    header_fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
-    thin_border = Border(
-        left=Side(style="thin"),
-        right=Side(style="thin"),
-        top=Side(style="thin"),
-        bottom=Side(style="thin"),
-    )
-
-    def _write_sheet(ws, title_suffix, headers, data_rows):
-        ncols = len(headers)
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=ncols)
-        c = ws.cell(row=1, column=1)
-        c.value = f"Reporte de Stock - Colores | {title_suffix} | Usuario: {username} | {today_str}"
-        c.font = title_font
-        c.fill = title_fill
-        c.alignment = Alignment(horizontal="center", vertical="center")
-        ws.row_dimensions[1].height = 30
-
-        for ci, h in enumerate(headers, start=1):
-            cell = ws.cell(row=2, column=ci, value=h)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-            cell.border = thin_border
-
-        for ri, row_data in enumerate(data_rows, start=3):
-            for ci, val in enumerate(row_data, start=1):
-                cell = ws.cell(row=ri, column=ci, value=val)
-                cell.border = thin_border
-
-        ws.freeze_panes = "A3"
-
-        for col in ws.columns:
-            real_cells = [c for c in col if not isinstance(c, MergedCell)]
-            if not real_cells:
-                continue
-            max_len = max((len(str(c.value or "")) for c in real_cells), default=8)
-            ws.column_dimensions[real_cells[0].column_letter].width = min(max_len + 3, 40)
-
-    # ── Sheet 1: Con Color ─────────────────────────────────────────────
-    headers1 = ["#", "SKU", "Descripción", "Stock", "Predesp", "Disponible",
-                 "Modelo", "Color", "Cantidad"]
-    for w in warehouses:
-        headers1.append(w)
-
-    rows1 = []
-    i = 1
-    for p in sorted(productos, key=lambda x: x.sku):
-        if not _has_real_color(p):
-            continue
-        wh_vals = _warehouse_vals(p.sku)
-        for c in sorted(p.colores, key=lambda x: x.nombre):
-            if c.nombre == "SIN COLOR":
-                continue
-            if c.disenos:
-                for d in sorted(c.disenos, key=lambda x: x.nombre):
-                    rows1.append([i, p.sku, p.descripcion, p.stock_referencial,
-                                  p.predespacho_total, p.disponible,
-                                  d.nombre, c.nombre, d.cantidad] + wh_vals)
-                    i += 1
-            else:
-                rows1.append([i, p.sku, p.descripcion, p.stock_referencial,
-                              p.predespacho_total, p.disponible,
-                              "", c.nombre, c.total] + wh_vals)
-                i += 1
-
-    ws1 = wb.active
-    ws1.title = "Con Color"
-    _write_sheet(ws1, "Con Color", headers1, rows1)
-
-    # ── Sheet 2: Sin Color ─────────────────────────────────────────────
-    headers2 = ["#", "SKU", "Descripción", "Stock", "Predesp", "Disponible"]
-    for w in warehouses:
-        headers2.append(w)
-
-    rows2 = []
-    for j, p in enumerate(sorted(productos, key=lambda x: x.sku), start=1):
-        if _has_real_color(p):
-            continue
-        rows2.append([j, p.sku, p.descripcion, p.stock_referencial,
-                       p.predespacho_total, p.disponible] + _warehouse_vals(p.sku))
-
-    ws2 = wb.create_sheet("Sin Color")
-    _write_sheet(ws2, "Sin Color", headers2, rows2)
-
-    wb.save(path)
+def _validar_archivo_source2(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            raw = f.read(2000)
+        content = raw.decode("utf-8", errors="replace").lower()
+        return "<html" in content and "color" in content and "cantidad" in content
+    except Exception:
+        return False
 
 
-def _friendly_error(ex: Exception) -> str:
-    msg = str(ex)
-    exc_type = type(ex).__name__
-    if exc_type == "TimeoutError" or "Timeout" in exc_type or "timed out" in msg.lower():
-        return "La conexión con el servidor no respondió a tiempo. Verifique su conexión a internet e intente nuevamente."
-    if "Credenciales incorrectas" in msg or "credenciales" in msg.lower():
-        return "Credenciales incorrectas o sin acceso al ERP. Verifique usuario y contraseña en el diálogo de credenciales."
-    if msg == "" or ("user" in msg.lower() and "pass" in msg.lower()):
-        return "Debe ingresar usuario y contraseña para descargar del ERP."
-    if exc_type in ("ConnectionError", "ConnectionRefusedError", "ConnectionAbortedError", "ConnectionResetError"):
-        return "No se pudo conectar al servidor. Verifique su conexión a internet o que el servidor esté disponible."
-    if "ENOTFOUND" in msg or "getaddrinfo" in msg:
-        return "No se pudo resolver la dirección del servidor. Verifique su conexión a internet."
-    if "ECONNREFUSED" in msg:
-        return "El servidor rechazó la conexión. Puede estar caído o no accesible desde su red."
-    if "HTTPError" in exc_type or "status" in msg.lower():
-        import re
-        match = re.search(r"(\d{3})", msg)
-        code = match.group(1) if match else ""
-        return f"El servidor respondió con un error (HTTP {code}). Intente más tarde." if code else "El servidor respondió con un error inesperado."
-    if "Playwright" in msg or "playwright" in msg.lower():
-        return "Error al controlar el navegador automático. Revise los logs para más detalles."
-    if "parse" in msg.lower() or "parsing" in msg.lower():
-        return "Error al procesar el archivo descargado. El formato puede ser incorrecto."
-    # fallback: short, clean message
-    short = msg if len(msg) < 150 else msg[:147] + "..."
-    return f"Error inesperado: {short}"
+def _close_dlg(page: ft.Page, dlg: ft.AlertDialog, extra_cb=None):
+    dlg.open = False
+    page.update()
+    if callable(extra_cb):
+        extra_cb()
 
 
 def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retry_creds=None, on_manual_file=None):
-    message = _friendly_error(ex)
+    message = friendly_error(ex)
     is_cred = "credenciales" in message.lower()
 
     def _change(e):
@@ -212,23 +87,6 @@ def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retr
     page.update()
 
 
-def _validar_archivo_source2(path: str) -> bool:
-    try:
-        with open(path, "rb") as f:
-            raw = f.read(2000)
-        content = raw.decode("utf-8", errors="replace").lower()
-        return "<html" in content and "color" in content and "cantidad" in content
-    except Exception:
-        return False
-
-
-def _close_dlg(page: ft.Page, dlg: ft.AlertDialog, extra_cb=None):
-    dlg.open = False
-    page.update()
-    if callable(extra_cb):
-        extra_cb()
-
-
 class StockConsolidatorApp:
     def __init__(self, page: ft.Page):
         self.page = page
@@ -248,10 +106,10 @@ class StockConsolidatorApp:
         self.page.title = "G360 - Stock Color Consolidator"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
-        self.page.window_width = 960
-        self.page.window_height = 780
-        self.page.window_min_width = 720
-        self.page.window_min_height = 600
+        self.page.window_width = WINDOW_WIDTH
+        self.page.window_height = WINDOW_HEIGHT
+        self.page.window_min_width = WINDOW_MIN_WIDTH
+        self.page.window_min_height = WINDOW_MIN_HEIGHT
         self.page.window_center()
         self.page.bgcolor = LIGHT.bg
 
@@ -280,15 +138,14 @@ class StockConsolidatorApp:
 
         self.page.clean()
         self.page.add(view)
-        
+
         # Cargamos productos
         self.dashboard.set_productos(self.productos)
         self.page.update()
 
     def _on_expand_all(self, expand: bool):
         if self.dashboard:
-            if hasattr(self.dashboard, "expand_all"):
-                self.dashboard.expand_all(expand)
+            self.dashboard.expand_all(expand)
 
     def _on_theme_toggle(self):
         self.modo = Modo.DARK if self.modo == Modo.LIGHT else Modo.LIGHT
@@ -459,12 +316,10 @@ class StockConsolidatorApp:
         )
         self.page.dialog = dlg
         dlg.open = True
-        # Usamos update del diálogo específicamente si es posible, 
-        # o aseguramos el update de la página.
         self.page.update()
 
     def _limpiar_descarga(self, download_dir: str | None):
-        if download_dir and "g360_s2_" in download_dir:
+        if download_dir and TEMP_DIR_PREFIX in download_dir:
             try:
                 shutil.rmtree(download_dir, ignore_errors=True)
             except Exception:
@@ -532,7 +387,7 @@ class StockConsolidatorApp:
             return
         try:
             os.environ["G360_S2_USER"] = self._creds.get("user", "")
-            _generar_reporte_xlsx(self.productos, e.path, self.source1_raw)
+            generar_reporte_xlsx(self.productos, e.path, self.source1_raw)
             self._show_toast(f"Reporte guardado: {e.path}")
         except Exception as ex:
             import traceback

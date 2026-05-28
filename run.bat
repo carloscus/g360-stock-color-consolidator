@@ -1,15 +1,11 @@
 @echo off
-:: ============================================
-:: G360 Stock Color Consolidator - Portable Launcher
-:: Ejecuta la aplicacion en cualquier PC Windows sin Python preinstalado
-:: ============================================
 setlocal enabledelayedexpansion
 chcp 65001 >nul
 cd /d "%~dp0"
 
-:: ============================================
-:: Funcion: Mostrar mensaje con timestamp
-:: ============================================
+set LOG_FILE=run_log.txt
+echo [%DATE% %TIME%] Inicio launcher > %LOG_FILE%
+
 goto :main
 
 :LogMsg
@@ -18,17 +14,6 @@ goto :main
     goto :eof
 
 :main
-set LOG_FILE=run_log.txt
-echo [%DATE% %TIME%] Inicio launcher > %LOG_FILE%
-
-:: ============================================
-:: Funcion: Auto-minimizar consola
-:: ============================================
-if not "%1"=="-" (
-    start /min cmd /c "%~dpnx0 -"
-    exit /b 0
-)
-
 :: ============================================
 :: Funcion: Verificar privilegios de admin
 :: Uso: solo informa, no requiere elevacion
@@ -47,14 +32,14 @@ if errorlevel 1 (
 call :CheckVCRuntime
 
 :: ============================================
-:: Funcion: Verificar conectividad a internet
+:: PASO 0: Verificar conectividad
 :: ============================================
 call :LogMsg "STEP" "Verificando conectividad..."
 ping -n 1 -w 2000 github.com >nul 2>&1
 if errorlevel 1 (
-    call :LogMsg "ERROR" "Sin internet - ejecute con conexion o copie uv.exe desde otra PC"
-    timeout /t 5 /nobreak >nul
-    exit /b 1
+    call :LogMsg "WARN" "Sin internet - conexión opcional si ya existe uv.exe"
+) else (
+    call :LogMsg "OK" "Conexion a internet OK"
 )
 
 :: ============================================
@@ -85,6 +70,14 @@ call :LogMsg "OK" "Iniciando aplicacion..."
 set "FLET_BIN=%~dp0.venv\Lib\site-packages\flet\bin"
 if exist "%FLET_BIN%" set "PATH=%FLET_BIN%;%PATH%"
 
+if not exist ".venv\Scripts\python.exe" (
+    call :LogMsg "ERROR" "Python no disponible en .venv\Scripts"
+    type %LOG_FILE%
+    pause
+    exit /b 1
+)
+
+call :LogMsg "OK" "Ejecutando aplicacion..."
 .venv\Scripts\python.exe run.py
 if errorlevel 1 (
     call :LogMsg "ERROR" "La aplicacion fallo - ver run_log.txt"
@@ -119,17 +112,32 @@ call :LogMsg "INFO" "uv.exe detectado, listo para crear entorno virtual"
 goto :eof
 
 :SetupVenv
-if exist ".venv\Scripts\python.exe" goto :eof
-call :LogMsg "STEP" "Creando entorno virtual..."
+call :LogMsg "STEP" "Preparando entorno virtual (.venv)..."
+if exist ".venv\Scripts\python.exe" (
+    call :LogMsg "INFO" "Verificando .venv existente..."
+    .venv\Scripts\python.exe -c "import sys" 2>> %LOG_FILE%
+    if errorlevel 1 (
+        call :LogMsg "WARN" ".venv corrupto, recreando..."
+        rd /s /q ".venv" >> %LOG_FILE% 2>&1
+    ) else (
+        call :LogMsg "OK" ".venv existe y funciona"
+        goto :eof
+    )
+)
+call :LogMsg "INFO" "Creando nuevo entorno virtual..."
 uv venv .venv --python 3.10 --seed >> %LOG_FILE% 2>&1
 if errorlevel 1 (
     call :LogMsg "WARN" "Fallback a Python 3.11/3.12..."
     uv venv .venv --python 3.11 --seed >> %LOG_FILE% 2>&1
     if errorlevel 1 uv venv .venv --python 3.12 --seed >> %LOG_FILE% 2>&1
 )
-if exist ".venv\Scripts\python.exe" goto :eof
-call :LogMsg "ERROR" "No se pudo crear el entorno virtual con ninguna version de Python"
-exit /b 1
+if exist ".venv\Scripts\python.exe" (
+    call :LogMsg "OK" "Entorno virtual listo"
+) else (
+    call :LogMsg "ERROR" "No se pudo crear el entorno virtual"
+    exit /b 1
+)
+goto :eof
 
 :InstallDependencies
 call :LogMsg "STEP" "Instalando dependencias..."
