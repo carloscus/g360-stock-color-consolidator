@@ -1,0 +1,27 @@
+G360 - Stock Color Consolidator
+=================================
+Version Portable
+
+INSTRUCCIONES DE USO:
+
+1. Descomprima esta carpeta en cualquier ubicacion (escritorio, USB, etc.).
+
+2. Ejecute "run.bat" haciendo doble clic.
+
+3. La primera vez:
+   - Se instalara automaticamente "uv" (gestor Python portable)
+   - Se creara un entorno virtual con Python 3.10
+   - Se instalaran todas las dependencias necesarias
+   - Se creara un acceso directo en el escritorio
+   - (Requiere conexion a internet solo la primera vez)
+
+4. Luego se iniciara la aplicacion automaticamente.
+
+REQUISITOS:
+- Windows 10 o superior
+- Conexion a internet (solo la primera ejecucion)
+
+Para configurar las credenciales ERP, use el boton de candado
+en la esquina superior derecha de la aplicacion.
+
+Si encuentra errores, revise el archivo run_log.txt

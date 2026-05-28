@@ -93,8 +93,6 @@ class SkuDetailModal:
                 border_radius=10,
                 border=ft.border.all(1, border_col),
                 padding=ft.padding.symmetric(vertical=12, horizontal=20),
-                expand=True,
-                blur=ft.Blur(sigma_x=6, sigma_y=6),
             )
 
         disp_color = self.p.success if self.producto.disponible > 0 else self.p.danger
@@ -185,7 +183,6 @@ class SkuDetailModal:
             border_radius=10,
             border=ft.border.all(1, self.p.glass_border),
             padding=ft.padding.all(12),
-            blur=ft.Blur(sigma_x=8, sigma_y=8),
         )
 
     def _get_color_hex(self, nombre: str) -> str:

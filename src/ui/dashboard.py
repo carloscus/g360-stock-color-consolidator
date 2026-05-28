@@ -3,6 +3,7 @@ from __future__ import annotations
 import flet as ft
 from src.config.theme import LIGHT, DARK, Paleta, Modo
 from src.core.models import ProductoConsolidado, AlertaSeveridad
+from src.core.constants import COLOR_SIN_COLOR, WAREHOUSE_KPI
 from src.ui.logo import logo_base64
 
 
@@ -29,6 +30,7 @@ class Dashboard:
         self._header_controls: list[ft.Control] = []
         self._header_container: ft.Container | None = None
         self._filtro_kpi = None
+        self.overlay_loading: ft.Container | None = None
 
         self._on_sku_click = None
         self._on_theme_toggle = None
@@ -118,10 +120,12 @@ class Dashboard:
             self._loading_text.value = message
         if progress is not None:
             self._loading_progress.value = max(0.0, min(1.0, progress))
-        if active and self.overlay_loading not in self.page.overlay:
-            self.page.overlay.append(self.overlay_loading)
-        elif not active and self.overlay_loading in self.page.overlay:
-            self.page.overlay.remove(self.overlay_loading)
+        if self.overlay_loading is not None:
+            self.overlay_loading.visible = active
+            if active and self.overlay_loading not in self.page.overlay:
+                self.page.overlay.append(self.overlay_loading)
+            elif not active and self.overlay_loading in self.page.overlay:
+                self.page.overlay.remove(self.overlay_loading)
         self.page.update()
 
     def _init_overlay_loading(self):
@@ -212,9 +216,6 @@ class Dashboard:
             size=13,
             color=self.p.text_secondary,
         )
-
-        # Initialize overlay loading (centrado, no ocupa espacio en layout)
-        self._init_overlay_loading()
 
         return ft.Container(
             content=ft.Column(
@@ -529,10 +530,14 @@ class Dashboard:
         widths = self._col_widths()
         keys = self._col_sort_keys()
         cells = []
+        sort_arrow = " ▲" if self.sort_asc else " ▼"
         for i, (label, w, sk) in enumerate(zip(labels, widths, keys)):
             is_sort = sk is not None
+            display_label = label
+            if is_sort and self.sort_col == sk:
+                display_label = (label or "") + sort_arrow
             txt = ft.Text(
-                label if label else "",
+                display_label,
                 size=11, weight=ft.FontWeight.BOLD,
                 color=self.p.accent if is_sort and self.sort_col == sk else self.p.text_secondary,
             )
@@ -703,12 +708,19 @@ class Dashboard:
     def _alerta_info(self, p: ProductoConsolidado) -> dict:
         if not p.alertas:
             return {"color": self.p.success, "icon": ft.icons.CHECK_CIRCLE_OUTLINE, "msg": "OK"}
-        sev = max(a.severidad for a in p.alertas)
+
+        # Ordenar alertas por severidad (ALTA > MEDIA > BAJA > INFO) y mostrar la más grave
+        severidad_orden = {AlertaSeveridad.ALTA: 0, AlertaSeveridad.MEDIA: 1, AlertaSeveridad.BAJA: 2, AlertaSeveridad.INFO: 3}
+        peor_alerta = min(p.alertas, key=lambda a: severidad_orden.get(a.severidad, 99))
+
+        sev = peor_alerta.severidad
         if sev == AlertaSeveridad.ALTA:
-            return {"color": self.p.danger, "icon": ft.icons.ERROR_OUTLINE, "msg": p.alertas[0].mensaje}
+            return {"color": self.p.danger, "icon": ft.icons.ERROR_OUTLINE, "msg": peor_alerta.mensaje}
         if sev == AlertaSeveridad.MEDIA:
-            return {"color": self.p.warning, "icon": ft.icons.WARNING_AMBER_OUTLINED, "msg": p.alertas[0].mensaje}
-        return {"color": self.p.info, "icon": ft.icons.INFO_OUTLINE, "msg": p.alertas[0].mensaje}
+            return {"color": self.p.warning, "icon": ft.icons.WARNING_AMBER_OUTLINED, "msg": peor_alerta.mensaje}
+        if sev == AlertaSeveridad.BAJA:
+            return {"color": self.p.info, "icon": ft.icons.INFO_OUTLINE, "msg": peor_alerta.mensaje}
+        return {"color": self.p.info, "icon": ft.icons.INFO_OUTLINE, "msg": peor_alerta.mensaje}
 
     # ── Refresh ──────────────────────────────────────────────────────────
 
@@ -776,9 +788,9 @@ class Dashboard:
         if self.filtro_alerta:
             filtered = [p for p in filtered if p.alertas]
         if self.filtro_color == "con":
-            filtered = [p for p in filtered if any(c.nombre != "SIN COLOR" for c in p.colores)]
+            filtered = [p for p in filtered if any(c.nombre != COLOR_SIN_COLOR for c in p.colores)]
         elif self.filtro_color == "sin":
-            filtered = [p for p in filtered if all(c.nombre == "SIN COLOR" for c in p.colores)]
+            filtered = [p for p in filtered if all(c.nombre == COLOR_SIN_COLOR for c in p.colores)]
         if self._filtro_kpi == "con_stock":
             filtered = [p for p in filtered if p.disponible > 0]
         elif self._filtro_kpi == "bajo_stock":
@@ -788,7 +800,7 @@ class Dashboard:
         elif self._filtro_kpi == "sin_disponible":
             filtered = [p for p in filtered if p.disponible == 0 and p.stock_referencial > 0]
         elif self._filtro_kpi == "w121":
-            filtered = [p for p in filtered if self._warehouse_disp("121", p.sku) > 0]
+            filtered = [p for p in filtered if self._warehouse_disp(WAREHOUSE_KPI, p.sku) > 0]
         self.productos_filtrados = filtered
 
     def _on_search_change(self, e):
@@ -849,7 +861,7 @@ class Dashboard:
         ))
         sin_disp = sum(1 for p in self.productos_filtrados if p.disponible == 0 and p.stock_referencial > 0)
         w121 = sum(1 for p in self.productos_filtrados 
-                   if self._warehouse_disp("121", p.sku) > 0)
+                   if self._warehouse_disp(WAREHOUSE_KPI, p.sku) > 0)
         return {
             "total_skus": total,
             "con_stock": con_stock,
