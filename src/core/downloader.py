@@ -6,16 +6,14 @@ from pathlib import Path
 import requests
 
 from src.core.parsers import parse_source1_all
-
-
-SOURCE1_DEFAULT_URL = (
-    'http://appweb.cipsa.com.pe:8054/AlmacenStock/DownLoadFiles'
-    '?value={"linea":"0101","parametroX2":"","parametroX1":"0"}'
-)
+from src.core.constants import SOURCE1_DEFAULT_URL
 
 
 def download_source1(url: str = SOURCE1_DEFAULT_URL) -> dict[str, dict[str, dict]]:
-    resp = requests.get(url, timeout=60)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+    }
+    resp = requests.get(url, headers=headers, timeout=60)
     resp.raise_for_status()
 
     suffix = _infer_ext(resp)

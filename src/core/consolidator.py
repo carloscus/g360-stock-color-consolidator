@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import pandas as pd
+from collections import defaultdict
 
 from .models import (
     Alerta,
@@ -16,102 +16,73 @@ def consolidar(
     source1: dict[str, dict],
     source2: dict[str, list[tuple[str, str, int]]],
 ) -> list[ProductoConsolidado]:
-    s1_rows = [
-        {"sku": sku, "stock": info.get("stock", 0),
-         "predespacho": info.get("predespacho", 0),
-         "descripcion": info.get("descripcion", "")}
-        for sku, info in source1.items()
-    ]
-    s1_df = pd.DataFrame(s1_rows)
-    if not s1_rows:
-        s1_df = pd.DataFrame(columns=["sku", "stock", "predespacho", "descripcion"])
-
-    s2_rows = [
-        {"sku": sku, "color": color, "modelo": modelo, "cantidad": cant}
-        for sku, tuples in source2.items()
-        for color, modelo, cant in tuples
-    ]
-    s2_df = pd.DataFrame(s2_rows)
-    if not s2_rows:
-        s2_df = pd.DataFrame(columns=["sku", "color", "modelo", "cantidad"])
-
-    if s2_df.empty:
-        sku_colores = pd.DataFrame(columns=["sku", "color", "total"])
-        sku_modelos = pd.DataFrame(columns=["sku", "color", "modelo", "cantidad"])
-        sku_totals = pd.DataFrame(columns=["sku", "suma_colores"])
-    else:
-        sku_modelos = (
-            s2_df.groupby(["sku", "color", "modelo"], as_index=False)["cantidad"]
-            .sum()
-        )
-        sku_colores = (
-            s2_df.groupby(["sku", "color"], as_index=False)["cantidad"]
-            .sum()
-            .rename(columns={"cantidad": "total"})
-        )
-        sku_totals = (
-            s2_df.groupby("sku", as_index=False)["cantidad"]
-            .sum()
-            .rename(columns={"cantidad": "suma_colores"})
-        )
-
     all_skus = set(source1.keys()) | set(source2.keys())
-    all_df = pd.DataFrame({"sku": list(all_skus)})
 
-    merged = (
-        all_df
-        .merge(s1_df, on="sku", how="left")
-        .merge(sku_totals, on="sku", how="left")
-        .fillna({"stock": 0, "predespacho": 0, "descripcion": "", "suma_colores": 0})
-    )
-    merged["stock"] = merged["stock"].astype(int)
-    merged["predespacho"] = merged["predespacho"].astype(int)
-    merged["suma_colores"] = merged["suma_colores"].astype(int)
-    merged["disponible"] = (merged["stock"] - merged["predespacho"]).clip(lower=0)
+    # ── Agrupar source2 por SKU → color → modelo ──────────────────────
+    # color_totals: {sku: {color: total}}
+    # modelo_cants: {(sku, color): [(modelo, cant), ...]}
+    color_totals: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    modelo_cants: dict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
 
-    color_map = {}
-    if not sku_colores.empty:
-        for _, row in sku_colores.iterrows():
-            color_map.setdefault(row["sku"], []).append(
-                {"nombre": row["color"], "total": int(row["total"])}
-            )
-    modelo_map = {}
-    if not sku_modelos.empty:
-        for _, row in sku_modelos.iterrows():
-            modelo_map.setdefault((row["sku"], row["color"]), []).append(
-                {"nombre": row["modelo"] or "S/M", "cantidad": int(row["cantidad"])}
-            )
+    for sku, tuples in source2.items():
+        for color, modelo, cant in tuples:
+            color_totals[sku][color] += cant
+            modelo_cants[(sku, color)].append((modelo, cant))
 
-    productos = []
-    for _, row in merged.iterrows():
-        sku = row["sku"]
-        stock = int(row["stock"])
-        predespacho = int(row["predespacho"])
-        disponible = int(row["disponible"])
-        descripcion = str(row["descripcion"])
-        suma_colores = int(row["suma_colores"])
+    productos: list[ProductoConsolidado] = []
 
-        colores = []
-        for cinfo in color_map.get(sku, []):
-            key = (sku, cinfo["nombre"])
+    for sku in sorted(all_skus):
+        in_s1 = sku in source1
+        in_s2 = sku in source2
+
+        info = source1.get(sku, {})
+        stock = info.get("stock", 0) or 0
+        predespacho = info.get("predespacho", 0) or 0
+        descripcion = info.get("descripcion", "") or ""
+
+        # Fallback: Si Source 1 no tiene descripción, buscar el nombre en el detalle de Source 2
+        if not descripcion and in_s2:
+            for _, mod, _ in source2[sku]:
+                if mod and mod.strip():
+                    descripcion = mod
+                    break
+        
+        # Fallback final: Si sigue sin nombre, usar el SKU como referencia
+        if not descripcion:
+            descripcion = f"ARTÍCULO {sku}"
+
+        modelo_base = info.get("modelo", "") or ""
+        disponible = max(0, stock - predespacho)
+
+        colores: list[ColorStock] = []
+        suma_colores = 0
+
+        for color_nombre, total in sorted(color_totals.get(sku, {}).items()):
             disenos = [
-                Diseno(nombre=m["nombre"], cantidad=m["cantidad"])
-                for m in modelo_map.get(key, [])
+                Diseno(nombre=m, cantidad=c)
+                for m, c in modelo_cants.get((sku, color_nombre), [])
             ]
-            colores.append(
-                ColorStock(
-                    nombre=cinfo["nombre"],
-                    total=cinfo["total"],
-                    disenos=disenos,
-                )
-            )
+            if total > 0:
+                colores.append(ColorStock(nombre=color_nombre, total=total, disenos=disenos))
+                suma_colores += total
 
-        alertas = _inferir_alertas(stock, predespacho, suma_colores, disponible)
+        if not colores:
+            suma_colores = 0
+
+        alertas = _inferir_alertas(
+            stock=stock,
+            predespacho=predespacho,
+            suma_colores=suma_colores,
+            disponible=disponible,
+            found_in_s1=in_s1,
+            found_in_s2=in_s2
+        )
 
         productos.append(
             ProductoConsolidado(
                 sku=sku,
                 descripcion=descripcion,
+                modelo=modelo_base,
                 stock_referencial=stock,
                 predespacho_total=predespacho,
                 disponible=disponible,
@@ -128,8 +99,28 @@ def _inferir_alertas(
     predespacho: int,
     suma_colores: int,
     disponible: int,
+    found_in_s1: bool = True,
+    found_in_s2: bool = True,
 ) -> list[Alerta]:
     alertas: list[Alerta] = []
+
+    # ── Verificación de Cruce (Cross-check) ───────────────────────────
+    if not found_in_s1:
+        alertas.append(
+            Alerta(
+                tipo=AlertaTipo.REFERENCIA_STOCK_FALTANTE,
+                mensaje="SKU no encontrado en reporte de Stock (Source 1)",
+                severidad=AlertaSeveridad.ALTA,
+            )
+        )
+    elif not found_in_s2:
+        alertas.append(
+            Alerta(
+                tipo=AlertaTipo.DETALLE_COLOR_FALTANTE,
+                mensaje="Sin detalle de colores en Source 2",
+                severidad=AlertaSeveridad.INFO,
+            )
+        )
 
     if stock == 0 and predespacho > 0:
         alertas.append(

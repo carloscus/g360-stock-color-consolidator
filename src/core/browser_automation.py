@@ -84,29 +84,40 @@ def download_source2(
             log("1. Login")
             progress("Iniciando sesión en ERP...")
             page.goto(_get_url())
-            page.locator("#Codigo").fill(_get_user())
-            page.locator("#contrasena").fill(_get_pass())
+            # Usamos fill con wait implícito
+            page.fill("#Codigo", _get_user())
+            page.fill("#contrasena", _get_pass())
+            
+            # Presionamos Enter y esperamos activamente por un indicador de éxito (la tabla de empresas)
             page.keyboard.press("Enter")
-            page.wait_for_load_state("networkidle")
+            try:
+                # Esperar hasta 10 segundos a que aparezca el selector de empresas
+                page.wait_for_selector("#TbEmpresa", timeout=10000)
+            except:
+                # Si no aparece, forzamos la espera de carga para validar el error después
+                page.wait_for_load_state("load")
+            
             dbg("01_login")
 
-            # detect login failure: if URL didn't change from login page
-            url_after = page.url.rstrip("/")
-            login_url = _get_url().rstrip("/")
-            same_page = url_after == login_url
+            # Detección de error: si el campo de código sigue visible, el login falló
             codigo_visible = page.locator("#Codigo").is_visible()
-            if same_page and codigo_visible:
-                log(f"1x. Login fallo — misma URL y formulario visible ({url_after})")
+            if codigo_visible:
+                log(f"1x. Login fallo — el formulario sigue visible en {page.url}")
                 raise ValueError(
                     "Credenciales incorrectas o sin acceso al ERP.\n"
                     "Verifique usuario y contraseña en el diálogo de credenciales."
                 )
 
-            # ── 2. Select company: ALMACENES ────────────────────────────
-            log("2. Seleccionar empresa ALMACENES")
-            progress("Seleccionando empresa...")
-            page.locator("#TbEmpresa > tbody > tr:nth-child(3) > td").click()
-            page.wait_for_load_state("load")
+            # ── 2. Select company ──────────────────────────────────────
+            log("2. Seleccionar empresa")
+            progress("Accediendo al panel principal...")
+            # Intentamos buscar el texto 'ALMACENES' para ser más robustos que tr:nth-child(3)
+            try:
+                page.get_by_text("ALMACENES", exact=True).click(timeout=5000)
+            except:
+                page.locator("#TbEmpresa > tbody > tr:nth-child(3) > td").click()
+            
+            page.wait_for_load_state("networkidle")
             page.wait_for_timeout(2000)
             dbg("02_empresa")
 
@@ -302,17 +313,12 @@ def download_source2(
                         const tree = $tree.dynatree('getTree');
                         if (!tree) return {api: true, tree: false};
                         const root = tree.getRoot();
-                        if (!root || !root.children || root.children.length === 0) {
-                            return {api: true, children: 0};
-                        }
-                        // expand first child
-                        root.children[0].expand(true);
-                        // give it time to load
-                        setTimeout(() => {
-                            if (root.children[0].children && root.children[0].children.length > 0) {
-                                root.children[0].children[0].select(true);
-                            }
-                        }, 500);
+                        
+                        // Expandir y seleccionar TODO el árbol de forma recursiva
+                        root.visit((node) => {
+                            node.expand(true);
+                            node.select(true);
+                        });
                         return {api: true, expanded: true, childCount: root.children.length};
                     } catch (e) {
                         return {api: true, error: e.message};

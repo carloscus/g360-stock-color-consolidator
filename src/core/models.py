@@ -15,6 +15,8 @@ class AlertaTipo(str, Enum):
     COLORES_EXCEDEN_STOCK = "colores_exceden_stock"
     SIN_STOCK = "sin_stock"
     DISPONIBLE_CERO = "disponible_cero"
+    REFERENCIA_STOCK_FALTANTE = "referencia_stock_faltante"
+    DETALLE_COLOR_FALTANTE = "detalle_color_faltante"
 
 
 @dataclass
@@ -44,5 +46,6 @@ class ProductoConsolidado:
     stock_referencial: int
     predespacho_total: int
     disponible: int
+    modelo: str = ""
     colores: list[ColorStock] = field(default_factory=list)
     alertas: list[Alerta] = field(default_factory=list)

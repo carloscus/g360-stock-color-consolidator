@@ -9,37 +9,46 @@ def parse_source1_all(path: str) -> dict[str, dict[str, dict]]:
         return {}
 
     resultado: dict[str, dict[str, dict]] = {}
-    for row in filas:
-        if len(row) < 19:
-            continue
-        sku_raw = (row[1] or "").strip()
-        desc_raw = (row[2] or "").strip()
-        almacen_raw = (row[9] or "").strip().upper()
-        stock_raw = (row[13] or "").strip()
-        pred_raw = (row[16] or "").strip()
+    last_sku, last_desc = "", ""
 
-        if not sku_raw or sku_raw in (".", "ARTÍCULO", "ARTICULO"):
+    # Reversión: Uso de posiciones fijas y omisión de las primeras 10 filas (metadatos)
+    for row in filas[10:]:
+        if len(row) < 17:
             continue
-        if not stock_raw:
-            continue
-        if not almacen_raw:
+            
+        r_sku = str(row[1] or "").strip().lstrip("'")
+        r_desc = str(row[2] or "").strip()
+        r_sku_upper = r_sku.upper()
+
+        # 1. Detectar fin de bloque o filas de sistema para resetear el 'sticky'
+        if r_sku_upper in ("TOTAL", "SUBTOTAL", "TOTAL GENERAL"):
+            last_sku = ""
             continue
 
-        sku = sku_raw.lstrip("'").strip()
-        if not sku:
+        # 2. Lógica Sticky: Solo actualizar si hay un nuevo SKU válido
+        if r_sku and r_sku_upper not in (".", "ARTÍCULO", "ARTICULO"):
+            last_sku = r_sku
+            last_desc = r_desc
+        
+        # 3. Si no tenemos un SKU de referencia (celda vacía y sin 'last_sku'), ignorar
+        if not last_sku:
             continue
+
+        almacen_raw = str(row[9] or "").strip().upper()
+        stock_raw = str(row[13] or "0").strip()
+        pred_raw = str(row[16] or "0").strip() if len(row) > 16 else "0"
+
         try:
             stock = int(float(stock_raw.replace(",", "")))
             pred = int(float(pred_raw.replace(",", ""))) if pred_raw else 0
-        except (ValueError, TypeError):
-            stock = 0
-            pred = 0
+        except (ValueError, TypeError, AttributeError):
+            continue
 
         almacen_row = resultado.setdefault(almacen_raw, {})
-        if sku not in almacen_row:
-            almacen_row[sku] = {"stock": 0, "predespacho": 0, "descripcion": desc_raw}
-        almacen_row[sku]["stock"] += stock
-        almacen_row[sku]["predespacho"] += pred
+        if last_sku not in almacen_row:
+            almacen_row[last_sku] = {"stock": 0, "predespacho": 0, "descripcion": last_desc}
+        almacen_row[last_sku]["stock"] += stock
+        almacen_row[last_sku]["predespacho"] += pred
 
     return resultado
 
@@ -86,9 +95,12 @@ def parse_source2(path: str) -> dict[str, list[tuple[str, str, int]]]:
         tags = [c.name for c in cells]
         texts = [c.get_text(strip=True) for c in cells]
         n = len(cells)
-        last_is_td = tags[-1] == "td"
 
-        if n <= 1 or not last_is_td:
+        if n <= 1:
+            continue
+
+        last_is_td = tags[-1] == "td"
+        if not last_is_td:
             continue
 
         if n >= 5:
@@ -108,23 +120,20 @@ def parse_source2(path: str) -> dict[str, list[tuple[str, str, int]]]:
 
             if sku_raw:
                 last_sku = sku_raw.lstrip("'").strip()
-                if not modelo_raw:
-                    last_modelo = ""
             if modelo_raw:
-                if modelo_raw in ("S/M", ""):
-                    last_modelo = ""
-                else:
-                    last_modelo = modelo_raw
+                last_modelo = "" if modelo_raw in ("S/M", "") else modelo_raw
 
             target_color = _normalize_color(color_raw)
             if target_color is None:
                 continue
+            
             cant = _parse_cant(cant_text)
-            # non-NACIONAL groups → force SIN COLOR
-            if last_grupo != "NACIONAL":
-                _add_row(resultado, last_sku, "SIN COLOR", "", cant)
-            else:
-                _add_row(resultado, last_sku, target_color, last_modelo, cant)
+
+            # Validación extra: No procesar si no hay SKU de referencia
+            if not last_sku:
+                continue
+                
+            _add_row(resultado, last_sku, target_color, last_modelo, cant)
 
         elif n == 3:
             modelo_raw = texts[0]
@@ -141,10 +150,7 @@ def parse_source2(path: str) -> dict[str, list[tuple[str, str, int]]]:
             if target_color is None:
                 continue
             cant = _parse_cant(cant_text)
-            if last_grupo != "NACIONAL":
-                _add_row(resultado, last_sku, "SIN COLOR", "", cant)
-            else:
-                _add_row(resultado, last_sku, target_color, last_modelo, cant)
+            _add_row(resultado, last_sku, target_color, last_modelo, cant)
 
         elif n == 2:
             color_raw = texts[0]
@@ -153,10 +159,7 @@ def parse_source2(path: str) -> dict[str, list[tuple[str, str, int]]]:
             if target_color is None:
                 continue
             cant = _parse_cant(cant_text)
-            if last_grupo != "NACIONAL":
-                _add_row(resultado, last_sku, "SIN COLOR", "", cant)
-            else:
-                _add_row(resultado, last_sku, target_color, last_modelo, cant)
+            _add_row(resultado, last_sku, target_color, last_modelo, cant)
 
     return resultado
 
