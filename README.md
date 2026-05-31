@@ -1,4 +1,4 @@
-# G360 Stock Color Consolidator — Portable
+# G360 Stock Color Consolidator — Portable v1.1.0
 
 Consolida stock de colores desde el ERP de CIPSA y exporta a XLSX.
 
