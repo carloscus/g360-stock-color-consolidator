@@ -1,12 +1,15 @@
-"""G360 Stock Color Consolidator - Aplicacion principal."""
+"""Stock Color Consolidator - Aplicacion principal CIPSA."""
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import shutil
-import tempfile
+import subprocess
+import tkinter as tk
 from datetime import datetime
 from pathlib import Path
+from tkinter import filedialog
 
 import flet as ft
 
@@ -45,11 +48,13 @@ def _validar_archivo_source2(path: str) -> bool:
         return False
 
 
-def _close_dlg(page: ft.Page, dlg: ft.AlertDialog, extra_cb=None):
-    dlg.open = False
+def _close_dlg(page: ft.Page, extra_cb=None):
+    page.pop_dialog()
     page.update()
     if callable(extra_cb):
-        extra_cb()
+        r = extra_cb()
+        if hasattr(r, "__await__"):
+            asyncio.create_task(r)
 
 
 def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retry_creds=None, on_manual_file=None):
@@ -57,33 +62,35 @@ def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retr
     is_cred = "credenciales" in message.lower()
 
     def _change(e):
-        _close_dlg(page, dlg, None)
+        _close_dlg(page)
         if callable(on_retry_creds):
             on_retry_creds()
 
-    def _manual(e):
-        _close_dlg(page, dlg, None)
+    async def _manual(e):
+        _close_dlg(page)
         if callable(on_manual_file):
-            on_manual_file()
+            r = on_manual_file()
+            if hasattr(r, "__await__"):
+                await r
 
     actions = [
         ft.TextButton(
             "OK",
-            on_click=lambda _: _close_dlg(page, dlg, close_cb),
+            on_click=lambda _: _close_dlg(page, close_cb),
+            tooltip="Cerrar mensaje",
         ),
     ]
     if is_cred and on_retry_creds:
-        actions.insert(0, ft.ElevatedButton("Cambiar credenciales", on_click=_change))
+        actions.insert(0, ft.Button("Cambiar credenciales", on_click=_change, tooltip="Abrir diálogo para cambiar credenciales ERP"))
     if on_manual_file:
-        actions.insert(0, ft.TextButton("Cargar manualmente", on_click=_manual))
+        actions.insert(0, ft.TextButton("Cargar manualmente", on_click=_manual, tooltip="Seleccionar archivo local"))
 
     dlg = ft.AlertDialog(
         title=ft.Text(title),
         content=ft.Text(message),
         actions=actions,
     )
-    page.dialog = dlg
-    dlg.open = True
+    page.show_dialog(dlg)
     page.update()
 
 
@@ -95,22 +102,20 @@ class StockConsolidatorApp:
         self.source2_data: dict[str, list[tuple[str, str, int]]] = {}
         self.productos: list[ProductoConsolidado] = []
         self.dashboard: Dashboard | None = None
-        self._picker: ft.FilePicker | None = None
-        self._save_picker: ft.FilePicker | None = None
         self._creds: dict[str, str] = self._load_cached_credentials()
         self._setup_window()
         self._build()
         self._show_credentials_dialog()
 
     def _setup_window(self):
-        self.page.title = "G360 - Stock Color Consolidator"
+        self.page.title = "Stock Color Consolidator - CIPSA"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
-        self.page.window_width = WINDOW_WIDTH
-        self.page.window_height = WINDOW_HEIGHT
-        self.page.window_min_width = WINDOW_MIN_WIDTH
-        self.page.window_min_height = WINDOW_MIN_HEIGHT
-        self.page.window_center()
+        self.page.window.width = WINDOW_WIDTH
+        self.page.window.height = WINDOW_HEIGHT
+        self.page.window.min_width = WINDOW_MIN_WIDTH
+        self.page.window.min_height = WINDOW_MIN_HEIGHT
+        self.page.run_task(self.page.window.center)
         self.page.bgcolor = LIGHT.bg
 
     def _build(self):
@@ -130,9 +135,6 @@ class StockConsolidatorApp:
         )
         self.dashboard.set_source1_raw(self.source1_raw)
         self.dashboard.set_theme(self.modo)
-
-        self._save_picker = ft.FilePicker(on_result=self._on_save_report)
-        self.page.overlay.append(self._save_picker)
 
         view = self.dashboard.build()
 
@@ -191,7 +193,7 @@ class StockConsolidatorApp:
             self.dashboard.set_loading(False)
             self.page.update()
 
-    def _on_download_source2(self):
+    async def _on_download_source2(self):
         if self.source2_data:
             self._confirm_reload(
                 "Ya hay datos de Source 2 procesados.\n"
@@ -200,21 +202,21 @@ class StockConsolidatorApp:
                 self._run_download_source2_with_creds,
             )
             return
-        self._run_download_source2_with_creds()
+        await self._run_download_source2_with_creds()
 
-    def _run_download_source2_with_creds(self):
+    async def _run_download_source2_with_creds(self):
         if not self._creds.get("user") or not self._creds.get("pass"):
             self._show_credentials_dialog(on_save_callback=self._run_download_source2)
             return
-        self._run_download_source2()
+        await self._run_download_source2()
 
-    def _run_download_source2(self):
+    async def _run_download_source2(self):
         download_dir: str | None = None
         os.environ["G360_S2_USER"] = self._creds.get("user", "")
         os.environ["G360_S2_PASS"] = self._creds.get("pass", "")
         self.dashboard.set_loading(True, "Descargando Source 2 (ERP)...")
         try:
-            path = browser_download_source2(
+            path = await browser_download_source2(
                 progress_callback=lambda msg: self.dashboard.set_loading(True, msg)
             )
             if not path:
@@ -252,7 +254,15 @@ class StockConsolidatorApp:
         except Exception as ex:
             import traceback
             traceback.print_exc()
-            _show_error(self.page, "Error al descargar Source 2", ex, on_retry_creds=self._show_credentials_dialog, on_manual_file=self._pick_file)
+            _show_error(
+                self.page,
+                "Error al descargar Source 2",
+                ex,
+                on_retry_creds=lambda: self._show_credentials_dialog(
+                    on_save_callback=self._run_download_source2
+                ),
+                on_manual_file=self._pick_file,
+            )
         finally:
             self.dashboard.set_loading(False)
             self._limpiar_descarga(download_dir)
@@ -265,24 +275,18 @@ class StockConsolidatorApp:
             modal = SkuDetailModal(self.page, producto, paleta)
             modal.show()
 
-    def _pick_file(self):
-        if self._picker:
-            self.page.overlay.remove(self._picker)
-        self._picker = ft.FilePicker(on_result=self._on_file_picked)
-        self.page.overlay.append(self._picker)
-        self.page.update()
-
-        self._picker.pick_files(
-            allow_multiple=False,
-            allowed_extensions=["xlsx", "xls", "csv"],
-            dialog_title="Seleccionar Source 2 (Colores)",
+    async def _pick_file(self):
+        root = tk.Tk()
+        root.withdraw()
+        root.wm_attributes("-topmost", True)
+        path = filedialog.askopenfilename(
+            title="Seleccionar Source 2 (Colores)",
+            filetypes=[("Archivos Excel", "*.xlsx *.xls *.csv"), ("Todos", "*.*")],
         )
-
-    def _on_file_picked(self, e: ft.FilePickerResultEvent):
-        if not e.files or not e.files[0].path:
+        root.destroy()
+        if not path:
             return
 
-        path = e.files[0].path
         self.dashboard.set_loading(True, "Procesando archivo de colores...")
         try:
             self.source2_data = parse_source2(path)
@@ -302,20 +306,19 @@ class StockConsolidatorApp:
             self.dashboard.set_loading(False)
             self.page.update()
 
-    def _close_dialog(self, dlg: ft.AlertDialog, extra_cb=None):
-        _close_dlg(self.page, dlg, extra_cb)
+    def _close_dialog(self, extra_cb=None):
+        _close_dlg(self.page, extra_cb)
 
     def _confirm_reload(self, message: str, on_confirm):
         dlg = ft.AlertDialog(
             title=ft.Text("Confirmar descarga"),
             content=ft.Text(message),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda _: self._close_dialog(dlg)),
-                ft.ElevatedButton("Descargar", on_click=lambda _: self._close_dialog(dlg, on_confirm)),
+                ft.TextButton("Cancelar", on_click=lambda _: self._close_dialog(), tooltip="Cancelar descarga"),
+                ft.Button("Descargar", on_click=lambda _: self._close_dialog(on_confirm), tooltip="Confirmar y descargar"),
             ],
         )
-        self.page.dialog = dlg
-        dlg.open = True
+        self.page.show_dialog(dlg)
         self.page.update()
 
     def _limpiar_descarga(self, download_dir: str | None):
@@ -339,56 +342,101 @@ class StockConsolidatorApp:
         CREDENTIALS_FILE.write_text(json.dumps(safe))
 
     def _show_credentials_dialog(self, on_save_callback=None):
-        hint_user = self._creds.get("user", "")
+        cached_user = self._creds.get("user", "")
+
+        error_text = ft.Text("", color=ft.Colors.RED, size=12, visible=False)
+
+        def _on_save(e=None):
+            user = user_field.value.strip()
+            pwd = pass_field.value
+            if not user or not pwd:
+                error_text.value = "Debe ingresar usuario y contraseña."
+                error_text.visible = True
+                self.page.update()
+                return
+            error_text.visible = False
+            self._creds["user"] = user
+            self._creds["pass"] = pwd
+            self._cache_credentials()
+            self._close_dialog()
+            if callable(on_save_callback):
+                r = on_save_callback()
+                if hasattr(r, "__await__"):
+                    asyncio.create_task(r)
+            else:
+                self._show_toast("Credenciales guardadas.")
+
         user_field = ft.TextField(
-            label="Usuario",
-            hint_text=hint_user if hint_user else "usuario",
-            autofocus=True,
+            label="Usuario ERP",
+            value=cached_user,
+            hint_text="ej. jperez",
+            autofocus=not bool(cached_user),
         )
         pass_field = ft.TextField(
             label="Contraseña",
             password=True,
             can_reveal_password=True,
+            autofocus=bool(cached_user),
+            on_submit=lambda e: _on_save(e),
         )
 
-        def _on_save(e):
-            self._creds["user"] = user_field.value.strip()
-            self._creds["pass"] = pass_field.value
-            self._cache_credentials()
-            self._close_dialog(dlg)
-            self._show_toast("Credenciales guardadas.")
-            if callable(on_save_callback):
-                on_save_callback()
+        save_label = "Guardar y descargar" if on_save_callback else "Guardar"
 
         dlg = ft.AlertDialog(
-            title=ft.Text("Credenciales ERP (appweb.cipsa.com.pe)"),
-            content=ft.Column([user_field, pass_field], tight=True, width=320),
+            title=ft.Container(
+                content=ft.Column(
+                    [
+                        ft.Container(
+                            content=ft.Icon(ft.Icons.LOCK_OUTLINE, size=24, color=ft.Colors.with_opacity(0.7, self.dashboard.p.accent)),
+                            bgcolor=ft.Colors.with_opacity(0.1, self.dashboard.p.accent),
+                            padding=10,
+                            border_radius=10,
+                        ),
+                        ft.Container(height=8),
+                        ft.Text("LOGIN", size=18, weight=ft.FontWeight.W_700, color=self.dashboard.p.text),
+                        ft.Text("appweb.cipsa.com.pe", size=11, color=self.dashboard.p.text_secondary),
+                    ],
+                    horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    spacing=0,
+                ),
+                padding=ft.Padding(left=0, right=0, top=8, bottom=0),
+            ),
+            title_padding=0,
+            content=ft.Column(
+                [
+                    ft.Divider(height=1, color=self.dashboard.p.glass_border),
+                    ft.Container(height=8),
+                    user_field,
+                    ft.Container(height=4),
+                    pass_field,
+                    error_text,
+                ],
+                tight=True,
+                width=360,
+                spacing=0,
+                horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            ),
             actions=[
-                ft.TextButton("Cancelar", on_click=lambda _: self._close_dialog(dlg)),
-                ft.ElevatedButton("Guardar", on_click=_on_save),
+                ft.TextButton("Cancelar", on_click=lambda _: self._close_dialog(), tooltip="Cerrar sin guardar"),
+                ft.FilledTonalButton(save_label, on_click=_on_save, tooltip="Guardar credenciales y continuar"),
             ],
+            actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.dialog = dlg
-        dlg.open = True
+        self.page.show_dialog(dlg)
         self.page.update()
 
-    def _on_download_report(self):
+    async def _on_download_report(self):
         if not self.productos:
             self._show_toast("No hay datos. Cargue Source 1 y Source 2 primero.")
             return
-        self._save_picker.save_file(
-            file_name=f"reporte_stock_colores_{datetime.now():%d%m%Y}.xlsx",
-            allowed_extensions=["xlsx"],
-            dialog_title="Guardar reporte XLSX",
-        )
-
-    def _on_save_report(self, e: ft.FilePickerResultEvent):
-        if not e.path:
-            return
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        filename = f"reporte_stock_colores_{datetime.now():%d%m%Y}.xlsx"
+        path = os.path.join(desktop, filename)
         try:
             os.environ["G360_S2_USER"] = self._creds.get("user", "")
-            generar_reporte_xlsx(self.productos, e.path, self.source1_raw)
-            self._show_toast(f"Reporte guardado: {e.path}")
+            generar_reporte_xlsx(self.productos, path, self.source1_raw)
+            subprocess.Popen(["explorer", f"/select,{os.path.normpath(path)}"])
+            self._show_toast(f"Reporte guardado en Escritorio")
         except Exception as ex:
             import traceback
             traceback.print_exc()

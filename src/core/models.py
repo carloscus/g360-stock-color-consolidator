@@ -17,6 +17,8 @@ class AlertaTipo(str, Enum):
     DISPONIBLE_CERO = "disponible_cero"
     REFERENCIA_STOCK_FALTANTE = "referencia_stock_faltante"
     DETALLE_COLOR_FALTANTE = "detalle_color_faltante"
+    STOCK_EN_OTRO_ALMACEN = "stock_en_otro_almacen"
+    PREDESPACHO_SIN_DISPONIBLE = "predespacho_sin_disponible"
 
 
 @dataclass

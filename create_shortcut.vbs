@@ -1,24 +1,29 @@
-Set WshShell = WScript.CreateObject("WScript.Shell")
-Set FSO = CreateObject("Scripting.FileSystemObject")
-strDesktop = WshShell.SpecialFolders("Desktop")
-strAppDir = FSO.GetParentFolderName(WScript.ScriptFullName)
-strShortcut = strDesktop & "\G360 Stock Color Consolidator.lnk"
+Set objShell = CreateObject("WScript.Shell")
+Set objFSO = CreateObject("Scripting.FileSystemObject")
 
-' Remove existing shortcut
-If FSO.FileExists(strShortcut) Then FSO.DeleteFile(strShortcut)
+strCurrentPath = objFSO.GetParentFolderName(WScript.ScriptFullName)
+strDesktop = objShell.SpecialFolders("Desktop")
+strBatPath = strCurrentPath & "\run.bat"
+strIconPath = strCurrentPath & "\assets\images\cipsa.ico"
 
-Set oShortcut = WshShell.CreateShortcut(strShortcut)
-oShortcut.TargetPath = strAppDir & "\run.bat"
-oShortcut.WorkingDirectory = strAppDir
-oShortcut.Description = "G360 - Stock Color Consolidator"
-oShortcut.WindowStyle = 1 ' Normal
-
-' Set icon from app assets
-strIcon = strAppDir & "\assets\images\favicon.ico"
-If FSO.FileExists(strIcon) Then
-    oShortcut.IconLocation = strIcon & ", 0"
-Else
-    oShortcut.IconLocation = "shell32.dll, 1"
+' Eliminar acceso directo anterior si existe
+If objFSO.FileExists(strDesktop & "\G360 Stock Consolidator.lnk") Then
+    objFSO.DeleteFile strDesktop & "\G360 Stock Consolidator.lnk", True
 End If
 
-oShortcut.Save
+Set objShortcut = objShell.CreateShortcut(strDesktop & "\G360 Stock Consolidator.lnk")
+objShortcut.TargetPath = strBatPath
+objShortcut.WorkingDirectory = strCurrentPath
+objShortcut.Description = "G360 Stock Consolidator - Consolidacion de Stock CIPSA"
+objShortcut.WindowStyle = 7  ' 7=Minimized, 1=Normal, 3=Maximized
+
+If objFSO.FileExists(strIconPath) Then
+    objShortcut.IconLocation = strIconPath & ", 0"
+Else
+    objShortcut.IconLocation = "%SystemRoot%\system32\shell32.dll, 15"
+End If
+
+objShortcut.Save
+
+' Refrescar cache de iconos del escritorio
+objShell.Run "ie4uinit.exe -show", 0, True

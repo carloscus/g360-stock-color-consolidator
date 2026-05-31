@@ -10,6 +10,13 @@ build/
 # Virtual environment
 .venv/
 venv/
+ENV/
+
+# Portable
+*-portable/
+uv.exe
+uvx.exe
+run_log.txt
 
 # IDE / Editor
 .vscode/
@@ -27,18 +34,15 @@ venv/
 # OS
 Thumbs.db
 .DS_Store
-Desktop.ini
+desktop.ini
 
 # Project specific
 samples/*.xls
 samples/*.xlsx
 
-# Portable version
-*-portable/
-run_log.txt
-
 # AI coding assistant
 .antigravitycli/
+.kilo/
 
 # Temporary generated files
 assets/images/*_b64.txt

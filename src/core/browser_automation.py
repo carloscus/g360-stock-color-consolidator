@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import tempfile
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 
 
 _dotenv_loaded = False
@@ -38,7 +37,7 @@ def _get_pass() -> str:
 _log = logging.getLogger("s2_browser")
 
 
-def download_source2(
+async def download_source2(
     *,
     headless: bool = True,
     download_dir: str | None = None,
@@ -67,14 +66,14 @@ def download_source2(
         if callable(progress_callback):
             progress_callback(msg)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
-        context = browser.new_context(accept_downloads=True)
-        page = context.new_page()
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=headless)
+        context = await browser.new_context(accept_downloads=True)
+        page = await context.new_page()
 
-        def dbg(step: str):
-            page.screenshot(path=Path(download_dir) / f"s2_dbg_{step}.png")
-            html = page.content()
+        async def dbg(step: str):
+            await page.screenshot(path=Path(download_dir) / f"s2_dbg_{step}.png")
+            html = await page.content()
             with open(Path(download_dir) / f"s2_html_{step}.html", "w", encoding="utf-8") as f:
                 f.write(html[:50000])
             _log.info("Screenshot + HTML guardado: %s", step)
@@ -83,24 +82,23 @@ def download_source2(
             # ── 1. Login ───────────────────────────────────────────────
             log("1. Login")
             progress("Iniciando sesión en ERP...")
-            page.goto(_get_url())
+            await page.goto(_get_url())
             # Usamos fill con wait implícito
-            page.fill("#Codigo", _get_user())
-            page.fill("#contrasena", _get_pass())
+            await page.fill("#Codigo", _get_user())
+            await page.fill("#contrasena", _get_pass())
             
             # Presionamos Enter y esperamos activamente por un indicador de éxito (la tabla de empresas)
-            page.keyboard.press("Enter")
+            await page.keyboard.press("Enter")
             try:
                 # Esperar hasta 10 segundos a que aparezca el selector de empresas
-                page.wait_for_selector("#TbEmpresa", timeout=10000)
-            except:
-                # Si no aparece, forzamos la espera de carga para validar el error después
-                page.wait_for_load_state("load")
+                await page.wait_for_selector("#TbEmpresa", timeout=10000)
+            except Exception:
+                await page.wait_for_load_state("load")
             
-            dbg("01_login")
+            await dbg("01_login")
 
             # Detección de error: si el campo de código sigue visible, el login falló
-            codigo_visible = page.locator("#Codigo").is_visible()
+            codigo_visible = await page.locator("#Codigo").is_visible()
             if codigo_visible:
                 log(f"1x. Login fallo — el formulario sigue visible en {page.url}")
                 raise ValueError(
@@ -113,41 +111,41 @@ def download_source2(
             progress("Accediendo al panel principal...")
             # Intentamos buscar el texto 'ALMACENES' para ser más robustos que tr:nth-child(3)
             try:
-                page.get_by_text("ALMACENES", exact=True).click(timeout=5000)
-            except:
-                page.locator("#TbEmpresa > tbody > tr:nth-child(3) > td").click()
+                await page.get_by_text("ALMACENES", exact=True).click(timeout=5000)
+            except Exception:
+                await page.locator("#TbEmpresa > tbody > tr:nth-child(3) > td").click()
             
-            page.wait_for_load_state("networkidle")
-            page.wait_for_timeout(2000)
-            dbg("02_empresa")
+            await page.wait_for_load_state("networkidle")
+            await page.wait_for_timeout(2000)
+            await dbg("02_empresa")
 
             # ── 3. Navigate menu ────────────────────────────────────────
             log("3. Navegar menu 317 -> 322 -> 501")
             progress("Navegando menú...")
-            page.locator('[id="317"] > a > b').click()
-            page.wait_for_timeout(400)
-            page.locator('[id="317"] > a > span').click()
-            page.wait_for_timeout(400)
-            page.locator('[id="317"] > a > span').click()
-            page.wait_for_timeout(300)
-            page.locator('[id="322"] > a > span').click()
-            page.wait_for_timeout(300)
-            page.locator('[id="501"] > a > span').click()
-            page.wait_for_load_state("load")
-            page.wait_for_timeout(2000)
+            await page.locator('[id="317"] > a > b').click()
+            await page.wait_for_timeout(400)
+            await page.locator('[id="317"] > a > span').click()
+            await page.wait_for_timeout(400)
+            await page.locator('[id="317"] > a > span').click()
+            await page.wait_for_timeout(300)
+            await page.locator('[id="322"] > a > span').click()
+            await page.wait_for_timeout(300)
+            await page.locator('[id="501"] > a > span').click()
+            await page.wait_for_load_state("load")
+            await page.wait_for_timeout(2000)
             log(f"3a. URL actual: {page.url}")
-            dbg("03_menu")
+            await dbg("03_menu")
 
             # ── 4. Warehouse selector ───────────────────────────────────
             log("4. Seleccionar almacen VES")
             progress("Seleccionando almacén VES...")
-            wh_btn_text_before = page.locator("#divAlmanecesMultiple > button").inner_text()
+            wh_btn_text_before = await page.locator("#divAlmanecesMultiple > button").inner_text()
             log(f"4a. Btn texto antes: '{wh_btn_text_before}'")
-            page.locator("#divAlmanecesMultiple > button").click()
-            page.wait_for_timeout(800)
+            await page.locator("#divAlmanecesMultiple > button").click()
+            await page.wait_for_timeout(800)
 
             log("4b. Seleccionar VES con JavaScript")
-            ves_result = page.evaluate("""() => {
+            ves_result = await page.evaluate("""() => {
                 const items = document.querySelectorAll('#divAlmanecesMultiple li');
                 for (const item of items) {
                     if (item.textContent.includes('CENTRO LOGISTICO VES')) {
@@ -178,17 +176,17 @@ def download_source2(
                 return {found: false, total: items.length};
             }""")
             log(f"4b. VES JS result: {ves_result}")
-            page.wait_for_timeout(500)
-            page.locator("#divAlmanecesMultiple > button").click()
-            page.wait_for_timeout(400)
-            wh_btn_text_after = page.locator("#divAlmanecesMultiple > button").inner_text()
+            await page.wait_for_timeout(500)
+            await page.locator("#divAlmanecesMultiple > button").click()
+            await page.wait_for_timeout(400)
+            wh_btn_text_after = await page.locator("#divAlmanecesMultiple > button").inner_text()
             log(f"4c. Btn texto despues: '{wh_btn_text_after}'")
-            dbg("04_almacen")
+            await dbg("04_almacen")
 
             # ── 5. Select line ──────────────────────────────────────────
             log("5. Seleccionar linea PELOTAS")
             progress("Seleccionando línea PELOTAS...")
-            line_js = page.evaluate("""(search) => {
+            line_js = await page.evaluate("""(search) => {
                 const ids = ['cboLinea', 'cbo_Linea', 'cbLinea', 'linea', 'Linea'];
                 for (const id of ids) {
                     const el = document.getElementById(id);
@@ -240,29 +238,33 @@ def download_source2(
 
             if not line_js.get('found', False):
                 log("5a. Fallback: click UI Chosen.js")
-                page.locator("#cboLinea_chosen > a").click()
-                page.wait_for_timeout(1000)
+                await page.locator("#cboLinea_chosen > a").click()
+                await page.wait_for_timeout(1000)
                 inp = page.locator("#cboLinea_chosen > div > div > input")
-                inp.click()
-                inp.type(search := line_search.lower(), delay=60)
-                page.wait_for_timeout(1500)
+                await inp.click()
+                search_val = line_search.lower()
+                await inp.type(search_val, delay=60)
+                await page.wait_for_timeout(1500)
+                clicked = False
                 for sel in ["#cboLinea_chosen .active-result", "#cboLinea_chosen li", "#cboLinea_chosen em"]:
                     el = page.locator(sel).first
-                    if el.count() > 0 and el.is_visible():
-                        txt = el.inner_text()
-                        if search in txt.lower():
-                            el.click()
+                    count = await el.count()
+                    if count > 0 and await el.is_visible():
+                        txt = await el.inner_text()
+                        if search_val in txt.lower():
+                            await el.click()
                             log(f"5a. Clickeado: {sel} -> '{txt}'")
+                            clicked = True
                             break
-                else:
+                if not clicked:
                     log("5a. No se encontro resultado para clickear")
-                page.wait_for_timeout(400)
+                await page.wait_for_timeout(400)
 
-            line_text = page.locator("#cboLinea_chosen > a > span").inner_text()
+            line_text = await page.locator("#cboLinea_chosen > a > span").inner_text()
             log(f"5b. Linea texto despues: '{line_text}'")
-            dbg("05_linea")
+            await dbg("05_linea")
             log("5d. Checkbox chk (Consolidar)")
-            chk_info = page.evaluate("""() => {
+            chk_info = await page.evaluate("""() => {
                 const el = document.getElementById('chk');
                 if (!el) return {found: false};
                 return {
@@ -277,7 +279,7 @@ def download_source2(
             log(f"5d. chk info: {chk_info}")
             if chk_info.get('found'):
                 if not chk_info.get('checked'):
-                    page.evaluate("""() => {
+                    await page.evaluate("""() => {
                         const el = document.getElementById('chk');
                         if (el && el.type === 'checkbox' && !el.checked) {
                             el.checked = true;
@@ -290,23 +292,23 @@ def download_source2(
                             el.dispatchEvent(new Event('change', {bubbles: true}));
                         }
                     }""")
-                    page.wait_for_timeout(300)
+                    await page.wait_for_timeout(300)
                     log("5d. chk activado")
                 else:
                     log("5d. chk ya estaba activo")
-            dbg("05d_chk")
+            await dbg("05d_chk")
 
             # ── 6. Tree / group ─────────────────────────────────────────
             log("6. Arbol modal")
             progress("Configurando filtros...")
             try:
-                page.locator("#btnArbol").click(timeout=3000)
-                page.wait_for_load_state("load")
-                page.wait_for_timeout(2000)
-                dbg("06_arbol_abierto")
+                await page.locator("#btnArbol").click(timeout=3000)
+                await page.wait_for_load_state("load")
+                await page.wait_for_timeout(2000)
+                await dbg("06_arbol_abierto")
 
                 # try using dynatree JS API to expand and select
-                tree_api = page.evaluate("""() => {
+                tree_api = await page.evaluate("""() => {
                     const $tree = jQuery('#tree');
                     if (!$tree || !$tree.dynatree) return {api: false};
                     try {
@@ -325,28 +327,28 @@ def download_source2(
                     }
                 }""")
                 log(f"6b. Tree API result: {tree_api}")
-                page.wait_for_timeout(1500)
+                await page.wait_for_timeout(1500)
 
                 # click OK button if present
                 try:
-                    page.locator("#mdlListaGrupo button.btn.btn-sm.btn-primary").click(timeout=3000)
-                    page.wait_for_timeout(400)
+                    await page.locator("#mdlListaGrupo button.btn.btn-sm.btn-primary").click(timeout=3000)
+                    await page.wait_for_timeout(400)
                     log("6b. Tree OK button clicked")
                 except Exception:
                     log("6b. No OK button found, trying to close modal")
-                    page.keyboard.press("Escape")
-                    page.wait_for_timeout(400)
+                    await page.keyboard.press("Escape")
+                    await page.wait_for_timeout(400)
 
                 # always clean up modals
-                page.evaluate("""document.querySelectorAll('.bootbox, .modal, .modal-backdrop')
+                await page.evaluate("""document.querySelectorAll('.bootbox, .modal, .modal-backdrop')
                     .forEach(el => el.remove());
                 document.body.classList.remove('modal-open');
                 document.body.style.overflow = '';
                 document.body.style.paddingRight = '';""")
-                page.wait_for_timeout(500)
+                await page.wait_for_timeout(500)
             except Exception as exc:
                 log(f"6x. No se pudo abrir arbol modal: {exc}")
-            dbg("06_post_modal")
+            await dbg("06_post_modal")
 
             # ── 7. Export option radio ──────────────────────────────────
             log("7. Click radio opcion exportar")
@@ -354,23 +356,24 @@ def download_source2(
             # recording: #idTabsTablas > div.widget-box > div.widget-body > div > div > div:nth-child(4) > div > label:nth-child(3) > span
             radio_selector = "#idTabsTablas > div.widget-box > div.widget-body > div > div > div:nth-child(4) > div > label:nth-child(3) > span"
             radio_span = page.locator(radio_selector)
-            log(f"7a. Radio span visible: {radio_span.is_visible()}")
-            radio_span.click()
-            page.wait_for_timeout(400)
+            radio_visible = await radio_span.is_visible()
+            log(f"7a. Radio span visible: {radio_visible}")
+            await radio_span.click()
+            await page.wait_for_timeout(400)
             log("7b. Radio exportar clickeado")
-            dbg("07_radio")
+            await dbg("07_radio")
 
             # ── 8. Search ───────────────────────────────────────────────
             log("8. Click Buscar")
             progress("Buscando datos...")
-            page.locator("#btnBuscar").click()
-            page.wait_for_timeout(3000)
+            await page.locator("#btnBuscar").click()
+            await page.wait_for_timeout(3000)
 
             # wait dynamically for results table to have rows (max 60s)
             log("8a. Esperando resultados...")
             for attempt in range(120):
-                page.wait_for_timeout(500)
-                row_count = page.evaluate(
+                await page.wait_for_timeout(500)
+                row_count = await page.evaluate(
                     "document.querySelectorAll('table tbody tr').length"
                 )
                 if row_count > 0:
@@ -379,33 +382,35 @@ def download_source2(
             else:
                 log("8a. Timeout esperando resultados (60s)")
 
-            has_rows = page.evaluate(
+            has_rows = await page.evaluate(
                 "document.querySelectorAll('table tbody tr').length"
             )
             log(f"8b. Filas en tabla resultado: {has_rows}")
 
-            dbg("08_post_search")
+            await dbg("08_post_search")
 
             # remove any modal that might have appeared
             log("8c. Remover modales post-search")
-            page.evaluate("""document.querySelectorAll('.bootbox, .modal, .modal-backdrop')
+            await page.evaluate("""document.querySelectorAll('.bootbox, .modal, .modal-backdrop')
                 .forEach(el => el.remove());
             document.body.classList.remove('modal-open');""")
-            page.wait_for_timeout(500)
+            await page.wait_for_timeout(500)
 
             # ── 9. Export XLS ───────────────────────────────────────────
             log("9. Click exportar")
             progress("Descargando archivo...")
             export_btn = page.locator("#hrefExportar")
-            log(f"9b. Export btn visible: {export_btn.is_visible()}")
-            log(f"9c. Export btn text: '{export_btn.inner_text()}'")
+            export_btn_visible = await export_btn.is_visible()
+            export_btn_text = await export_btn.inner_text()
+            log(f"9b. Export btn visible: {export_btn_visible}")
+            log(f"9c. Export btn text: '{export_btn_text}'")
 
-            with page.expect_download() as download_info:
-                page.locator("#hrefExportar > i").click()
+            async with page.expect_download() as download_info:
+                await page.locator("#hrefExportar > i").click()
 
-            download = download_info.value
+            download = await download_info.value
             download_path = os.path.join(download_dir, download.suggested_filename)
-            download.save_as(download_path)
+            await download.save_as(download_path)
             log(f"9d. Archivo guardado: {download_path}")
 
             file_size = Path(download_path).stat().st_size
@@ -415,24 +420,24 @@ def download_source2(
                 header = f.read(200)
             log(f"9f. Header bytes: {header[:80]}")
 
-            page.wait_for_timeout(1000)
-            dbg("09_exportado")
+            await page.wait_for_timeout(1000)
+            await dbg("09_exportado")
 
             # ── 10. Logout ──────────────────────────────────────────────
             log("10. Logout")
             progress("Cerrando sesión...")
-            page.locator("div.navbar-buttons span").first.click()
-            page.wait_for_timeout(300)
-            page.locator("#navbar li > ul a").click()
-            page.wait_for_load_state("networkidle")
-            dbg("10_logout")
+            await page.locator("div.navbar-buttons span").first.click()
+            await page.wait_for_timeout(300)
+            await page.locator("#navbar li > ul a").click()
+            await page.wait_for_load_state("networkidle")
+            await dbg("10_logout")
 
-            browser.close()
+            await browser.close()
             log(f"Fin OK, archivo: {download_path}")
 
         except Exception:
-            dbg("error")
-            browser.close()
+            await dbg("error")
+            await browser.close()
             _log.exception("Error en automation")
             raise
 

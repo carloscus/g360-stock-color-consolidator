@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import flet as ft
-from src.core.models import ProductoConsolidado, ColorStock, AlertaSeveridad
+from src.core.models import ProductoConsolidado, ColorStock
 from src.config.theme import Paleta
 
 
@@ -27,7 +27,7 @@ class SkuDetailModal:
             ),
             width=560,
             height=460,
-            padding=ft.padding.all(20),
+            padding=ft.Padding(left=20, right=20, top=20, bottom=20),
         )
 
         self.dialog = ft.AlertDialog(
@@ -38,6 +38,7 @@ class SkuDetailModal:
                     "Cerrar",
                     on_click=self._close,
                     style=ft.ButtonStyle(color=self.p.text_secondary),
+                    tooltip="Cerrar detalle del producto",
                 ),
             ],
             actions_alignment=ft.MainAxisAlignment.END,
@@ -45,13 +46,11 @@ class SkuDetailModal:
             shape=ft.RoundedRectangleBorder(radius=16),
         )
 
-        self.page.dialog = self.dialog
-        self.dialog.open = True
+        self.page.show_dialog(self.dialog)
         self.page.update()
 
     def _close(self, e):
-        self.dialog.open = False
-        self.page.dialog = None
+        self.page.pop_dialog()
         self.page.update()
 
     def _header_info(self):
@@ -84,15 +83,15 @@ class SkuDetailModal:
                 content=ft.Column(
                     [
                         ft.Text(str(value), size=18, weight=ft.FontWeight.BOLD, color=color),
-                        ft.Text(label, size=10, color=self.p.text_secondary),
+                        ft.Text(label, size=11, color=self.p.text_secondary),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=0,
                 ),
                 bgcolor=bg,
                 border_radius=10,
-                border=ft.border.all(1, border_col),
-                padding=ft.padding.symmetric(vertical=12, horizontal=20),
+                border=ft.Border.all(1, border_col),
+                padding=ft.Padding(left=20, right=20, top=12, bottom=12),
             )
 
         disp_color = self.p.success if self.producto.disponible > 0 else self.p.danger
@@ -145,7 +144,7 @@ class SkuDetailModal:
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    padding=ft.padding.only(left=24, top=2, bottom=2),
+                    padding=ft.Padding(left=24, top=2, bottom=2),
                 )
             )
 
@@ -155,7 +154,7 @@ class SkuDetailModal:
                     ft.Container(
                         content=ft.Row(
                             [
-                                ft.Icon(ft.icons.CIRCLE, size=14, color=bar_color),
+                                ft.Icon(ft.Icons.CIRCLE, size=14, color=bar_color),
                                 ft.Text(color.nombre, size=14, weight=ft.FontWeight.W_600, color=self.p.text),
                                 ft.Container(expand=True),
                                 ft.Text(str(color.total), size=14, weight=ft.FontWeight.BOLD, color=self.p.text),
@@ -163,7 +162,7 @@ class SkuDetailModal:
                             spacing=6,
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
-                        padding=ft.padding.symmetric(vertical=6),
+                        padding=ft.Padding(left=0, right=0, top=6, bottom=6),
                     ),
                     ft.Container(
                         content=ft.Container(
@@ -181,8 +180,8 @@ class SkuDetailModal:
             ),
             bgcolor=self.p.glass_bg,
             border_radius=10,
-            border=ft.border.all(1, self.p.glass_border),
-            padding=ft.padding.all(12),
+            border=ft.Border.all(1, self.p.glass_border),
+            padding=ft.Padding(left=12, right=12, top=12, bottom=12),
         )
 
     def _get_color_hex(self, nombre: str) -> str:

@@ -4,175 +4,166 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 set LOG_FILE=run_log.txt
-echo [%DATE% %TIME%] Inicio launcher > %LOG_FILE%
+echo [%DATE% %TIME%] Inicio Consolidator > %LOG_FILE%
 
-goto :main
+echo.
+echo === G360 Stock Color Consolidator - Inicio ===
+echo.
 
-:LogMsg
-    echo [%DATE% %TIME%] [%~1] %~2
-    echo [%DATE% %TIME%] [%~1] %~2 >> %LOG_FILE%
-    goto :eof
+REM ============================================
+REM [1/5] Verificar / Instalar uv
+echo [%DATE% %TIME%] [1/5] Verificando uv... >> %LOG_FILE%
+echo [1/5] Verificando uv...
 
-:main
-:: ============================================
-:: Funcion: Verificar privilegios de admin
-:: Uso: solo informa, no requiere elevacion
-:: ============================================
-net session >nul 2>&1
+where uv >nul 2>&1
 if errorlevel 1 (
-    call :LogMsg "INFO" "Sin privilegios de admin - usando modo portable (sin instalar Python sistema)"
-    set "NEED_ADMIN=0"
+    if exist "uv.exe" (
+        echo   Usando uv.exe local...
+        set "PATH=%~dp0;%PATH%"
+    ) else (
+        echo   uv no encontrado. Descargando e instalando...
+        powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex" >> %LOG_FILE% 2>&1
+        if errorlevel 1 (
+            echo [%DATE% %TIME%] [ERROR] No se pudo instalar uv >> %LOG_FILE%
+            echo   ERROR: No se pudo instalar uv automaticamente.
+            echo   Descargue manualmente de: https://docs.astral.sh/uv/
+            msg * "G360 Consolidator: No se pudo instalar uv. Descarguelo manualmente de https://docs.astral.sh/uv/"
+            pause
+            exit /b 1
+        )
+        echo   uv instalado correctamente.
+    )
 ) else (
-    set "NEED_ADMIN=1"
+    echo   uv encontrado.
 )
 
-:: ============================================
-:: Funcion: Verificar DLLs de Visual C++ runtime
-:: ============================================
-call :CheckVCRuntime
+for /f "tokens=*" %%i in ('where uv 2^>nul') do set "UV_PATH=%%~dpi"
+if defined UV_PATH set "PATH=%UV_PATH%;%PATH%"
 
-:: ============================================
-:: PASO 0: Verificar conectividad
-:: ============================================
-call :LogMsg "STEP" "Verificando conectividad..."
-ping -n 1 -w 2000 github.com >nul 2>&1
+where uv >nul 2>&1
 if errorlevel 1 (
-    call :LogMsg "WARN" "Sin internet - conexión opcional si ya existe uv.exe"
-) else (
-    call :LogMsg "OK" "Conexion a internet OK"
+    if exist "%USERPROFILE%\.cargo\bin\uv.exe" (
+        set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+    ) else if exist "%USERPROFILE%\.local\bin\uv.exe" (
+        set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+    )
 )
 
-:: ============================================
-:: Funcion: Detectar o instalar Python
-:: ============================================
-call :LogMsg "STEP" "Verificando Python..."
-where python >nul 2>&1
-if not errorlevel 1 goto :RunApp
+echo.
 
-:: ============================================
-:: Funcion: Usar uv.exe existente o descargar
-:: ============================================
-call :SetupPythonWithUV
+REM ============================================
+REM [2/5] Verificar / Instalar Python 3.11
+echo [%DATE% %TIME%] [2/5] Verificando Python 3.11... >> %LOG_FILE%
+echo [2/5] Verificando Python 3.11...
 
-:: ============================================
-:: Funcion: Iniciar aplicacion
-:: ============================================
-:RunApp
-call :SetupVenv
-if errorlevel 1 exit /b 1
-call :InstallDependencies
-if errorlevel 1 exit /b 1
-call :InstallChromium
-call :VerifyImports
-if errorlevel 1 exit /b 1
-call :LogMsg "OK" "Iniciando aplicacion..."
+where uv >nul 2>&1
+if errorlevel 1 (
+    echo   ERROR: uv no disponible. No se puede instalar Python.
+    pause
+    exit /b 1
+)
+
+uv python list --only-installed 2>nul | find "3.11" >nul
+if errorlevel 1 (
+    echo   Python 3.11 no encontrado. Instalando con uv...
+    uv python install 3.11 >> %LOG_FILE% 2>&1
+    if errorlevel 1 (
+        echo [%DATE% %TIME%] [ERROR] No se pudo instalar Python 3.11 >> %LOG_FILE%
+        echo   ERROR: No se pudo instalar Python 3.11.
+        msg * "G360 Consolidator: No se pudo instalar Python 3.11. Revise %LOG_FILE%"
+        pause
+        exit /b 1
+    )
+    echo   Python 3.11 instalado.
+) else (
+    echo   Python 3.11 encontrado.
+)
+
+echo.
+
+REM ============================================
+REM [3/5] Crear entorno virtual e instalar dependencias
+echo [%DATE% %TIME%] [3/5] Configurando entorno virtual... >> %LOG_FILE%
+echo [3/5] Configurando entorno virtual...
+if not exist ".venv\Scripts\python.exe" (
+    echo   Creando entorno virtual...
+    uv venv .venv --python 3.11 --seed >> %LOG_FILE% 2>&1
+    if errorlevel 1 (
+        echo [%DATE% %TIME%] [ERROR] No se pudo crear el entorno virtual >> %LOG_FILE%
+        echo   ERROR: No se pudo crear el entorno virtual.
+        msg * "G360 Consolidator: No se pudo crear el entorno virtual. Revise %LOG_FILE%"
+        pause
+        exit /b 1
+    )
+    echo   Entorno virtual creado.
+) else (
+    .venv\Scripts\python.exe -c "import sys" 2>> %LOG_FILE%
+    if errorlevel 1 (
+        echo   .venv corrupto, recreando...
+        rd /s /q ".venv" 2>> %LOG_FILE%
+        uv venv .venv --python 3.11 --seed >> %LOG_FILE% 2>&1
+    )
+)
+
+echo   Instalando dependencias...
+uv sync >> %LOG_FILE% 2>&1
+if errorlevel 1 (
+    echo [%DATE% %TIME%] [ERROR] Error al sincronizar dependencias >> %LOG_FILE%
+    echo   ERROR: No se pudieron instalar las dependencias.
+    echo   Revise %LOG_FILE% para mas detalles.
+    msg * "G360 Consolidator: No se pudieron instalar las dependencias. Revise %LOG_FILE%"
+    pause
+    exit /b 1
+)
+echo [%DATE% %TIME%] [3/5] Dependencias instaladas >> %LOG_FILE%
+echo   Dependencias instaladas.
+
+REM Instalar Chromium para Playwright
+echo   Instalando Chromium (para descarga S2)...
+.venv\Scripts\python.exe -m playwright install chromium >> %LOG_FILE% 2>&1
+if errorlevel 1 (
+    echo   Chromium fallo - puede cargar S2 manualmente.
+) else (
+    echo   Chromium instalado.
+)
+
+echo.
+
+REM ============================================
+REM [4/5] Acceso directo
+echo [%DATE% %TIME%] [4/5] Creando acceso directo... >> %LOG_FILE%
+echo [4/5] Creando acceso directo...
+if exist "create_shortcut.vbs" (
+    cscript //nologo create_shortcut.vbs >> %LOG_FILE% 2>&1
+    echo [%DATE% %TIME%] [4/5] Acceso directo creado >> %LOG_FILE%
+    echo   Acceso directo creado en el escritorio.
+) else (
+    echo   create_shortcut.vbs no encontrado - omitiendo.
+)
+
+echo.
+
+REM ============================================
+REM [5/5] Iniciar aplicacion
+echo [%DATE% %TIME%] [5/5] Iniciando Consolidator... >> %LOG_FILE%
+echo [5/5] Iniciando Consolidator...
+echo.
 
 set "FLET_BIN=%~dp0.venv\Lib\site-packages\flet\bin"
 if exist "%FLET_BIN%" set "PATH=%FLET_BIN%;%PATH%"
 
-if not exist ".venv\Scripts\python.exe" (
-    call :LogMsg "ERROR" "Python no disponible en .venv\Scripts"
-    type %LOG_FILE%
-    pause
-    exit /b 1
-)
-
-call :LogMsg "OK" "Ejecutando aplicacion..."
+echo [%DATE% %TIME%] [5/5] Lanzando aplicacion... >> %LOG_FILE%
 .venv\Scripts\python.exe run.py
 if errorlevel 1 (
-    call :LogMsg "ERROR" "La aplicacion fallo - ver run_log.txt"
-    type %LOG_FILE%
+    echo [%DATE% %TIME%] [ERROR] La aplicacion fallo >> %LOG_FILE%
+    echo.
+    echo La aplicacion fallo. Revise %LOG_FILE% para mas detalles.
+    msg * "G360 Consolidator: La aplicacion fallo. Revise %LOG_FILE% para mas detalles."
+    echo Presione una tecla para salir...
     pause
 )
-exit /b 0
 
-:: ============================================
-:: Funciones auxiliares
-:: ============================================
-
-:CheckVCRuntime
-set "MISSING_DLL=0"
-for %%d in (vcruntime140.dll msvcp140.dll) do (
-    where %%d >nul 2>&1
-    if errorlevel 1 set "MISSING_DLL=1"
-)
-if "%MISSING_DLL%"=="1" if "%NEED_ADMIN%"=="1" (
-    call :LogMsg "WARNING" "Faltan DLLs de Visual C++ - instale: https://aka.ms/vs/17/release/vc_redist_x64.exe"
-)
-goto :eof
-
-:SetupPythonWithUV
-if not exist "uv.exe" (
-    call :LogMsg "ERROR" "Sin Python e internet - copie uv.exe desde otra PC o conectese"
-    timeout /t 10 /nobreak >nul
-    exit /b 1
-)
-set "PATH=%~dp0;%PATH%"
-call :LogMsg "INFO" "uv.exe detectado, listo para crear entorno virtual"
-goto :eof
-
-:SetupVenv
-call :LogMsg "STEP" "Preparando entorno virtual (.venv)..."
-if exist ".venv\Scripts\python.exe" (
-    call :LogMsg "INFO" "Verificando .venv existente..."
-    .venv\Scripts\python.exe -c "import sys" 2>> %LOG_FILE%
-    if errorlevel 1 (
-        call :LogMsg "WARN" ".venv corrupto, recreando..."
-        rd /s /q ".venv" >> %LOG_FILE% 2>&1
-    ) else (
-        call :LogMsg "OK" ".venv existe y funciona"
-        goto :eof
-    )
-)
-call :LogMsg "INFO" "Creando nuevo entorno virtual..."
-uv venv .venv --python 3.10 --seed >> %LOG_FILE% 2>&1
-if errorlevel 1 (
-    call :LogMsg "WARN" "Fallback a Python 3.11/3.12..."
-    uv venv .venv --python 3.11 --seed >> %LOG_FILE% 2>&1
-    if errorlevel 1 uv venv .venv --python 3.12 --seed >> %LOG_FILE% 2>&1
-)
-if exist ".venv\Scripts\python.exe" (
-    call :LogMsg "OK" "Entorno virtual listo"
-) else (
-    call :LogMsg "ERROR" "No se pudo crear el entorno virtual"
-    exit /b 1
-)
-goto :eof
-
-:InstallDependencies
-call :LogMsg "STEP" "Instalando dependencias..."
-uv pip install -r requirements.txt >> %LOG_FILE% 2>&1
-if errorlevel 1 (
-    call :LogMsg "ERROR" "Error al instalar dependencias"
-    type %LOG_FILE%
-    pause
-    exit /b 1
-)
-goto :eof
-
-:InstallChromium
-call :LogMsg "STEP" "Instalando Chromium (para descarga S2)..."
-set "CHROMIUM_OK=0"
-for /l %%i in (1,1,3) do (
-    .venv\Scripts\python.exe -m playwright install chromium >> %LOG_FILE% 2>&1
-    if not errorlevel 1 (
-        set "CHROMIUM_OK=1"
-        call :LogMsg "OK" "Chromium instalado"
-        goto :eof
-    )
-    timeout /t 2 /nobreak >nul
-)
-call :LogMsg "WARN" "Chromium fallo - puede cargar S2 manualmente"
-goto :eof
-
-:VerifyImports
-call :LogMsg "STEP" "Verificando modulos..."
-.venv\Scripts\python.exe -c "import flet, pandas, openpyxl, bs4, lxml" 2>> %LOG_FILE%
-if errorlevel 1 (
-    call :LogMsg "ERROR" "Verificacion fallida - ver run_log.txt"
-    type %LOG_FILE%
-    pause
-    exit /b 1
-)
-call :LogMsg "OK" "Todos los modulos disponibles"
-goto :eof
+echo [%DATE% %TIME%] Consolidator terminado normalmente >> %LOG_FILE%
+echo.
+echo === G360 Consolidator terminado ===
+echo.

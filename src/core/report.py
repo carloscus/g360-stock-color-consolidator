@@ -11,7 +11,6 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from src.core.constants import (
     COLOR_SIN_COLOR,
     REPORT_FILENAME_FORMAT,
-    REPORT_FILENAME_PREFIX,
 )
 from src.core.models import ProductoConsolidado
 

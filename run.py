@@ -1,10 +1,18 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+BASE_DIR = Path(__file__).resolve().parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
 
 import flet as ft
 from src.main import main
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    try:
+        ft.run(main)
+    except Exception as e:
+        print(f"\n[FATAL] Error al iniciar la aplicacion: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        input("\nPresione Enter para salir...")
