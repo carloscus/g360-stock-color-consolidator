@@ -9,6 +9,11 @@ from src.ui.logo import logo_base64
 from src.ui.modals.sin_stock_modal import SinStockModal
 from src.ui.modals.traslados_modal import TrasladosModal
 
+try:
+    from g360_flet.g360_signature import G360Signature
+except ImportError:
+    G360Signature = None
+
 
 class Dashboard:
     def __init__(self, page: ft.Page):
@@ -523,7 +528,14 @@ class Dashboard:
             tooltip="Limpiar todos los filtros activos",
         )
 
-        return [header] + btns + [color_header] + color_btns + [clear_btn]
+        g360_footer = ft.Container(
+            content=G360Signature(mode="powered", version="2.0") if G360Signature
+            else ft.Text("Powered by G360", size=10, color=self.p.text_secondary, weight=ft.FontWeight.W_500),
+            alignment=ft.Alignment(0, 0),
+            padding=ft.Padding(left=8, right=8, top=8, bottom=4),
+        )
+
+        return [header] + btns + [color_header] + color_btns + [clear_btn] + [ft.Container(expand=True), g360_footer]
 
     def _color_filter_sidebar_btns(self) -> list[ft.Control]:
         is_dark = self.modo == Modo.DARK
