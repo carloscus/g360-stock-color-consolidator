@@ -1,25 +1,29 @@
 {
-  "name": "cipsa",
+  "name": "g360-stock-consolidator",
   "device": "pc",
-  "version": "1.1.0",
+  "version": "1.2.0",
+  "updatedAt": "2026-08-18",
   "brand": "cipsa",
   "description": "Stock Color Consolidator - Consolidacion de Stock ERP (CIPSA)",
   "framework": "flet",
+  "flet_version": "0.28.3",
   "portable": true,
   "colors": {
-    "bg": "#0d1117",
-    "surface": "#161b22",
-    "accent": "#34d399",
-    "text": "#f0f6fc",
-    "muted": "#8b949e",
-    "success": "#22c55e",
+    "bg": "#f8fafc",
+    "surface": "#ffffff",
+    "surface_hover": "#f1f5f9",
+    "accent": "#059669",
+    "text": "#0f172a",
+    "text_secondary": "#64748b",
+    "border": "#e2e8f0",
+    "success": "#059669",
     "warning": "#f59e0b",
-    "error": "#ef4444"
+    "error": "#ef4444",
+    "info": "#0ea5e9"
   },
   "effects": {
     "glassmorphism": true,
-    "blur": "8px",
-    "rounded": "10px"
+    "rounded": "12px"
   },
   "signature": {
     "mode": "powered",

@@ -22,6 +22,8 @@ def generar_reporte_xlsx(
 ):
     """Genera un reporte XLSX con dos hojas: Con Color y Sin Color."""
     wb = Workbook()
+    wb.properties.creator = "ccusi"
+    wb.properties.description = "Generado por G360"
 
     warehouses = sorted(
         c for c in (source1_raw or {}).keys() if c != "VES"

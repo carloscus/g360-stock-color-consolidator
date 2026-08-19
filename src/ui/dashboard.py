@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import flet as ft
-from src.config.theme import LIGHT, DARK, Paleta, Modo, kpi_config, kpi_config_dict
+from src.config.theme import LIGHT, DARK, Paleta, Modo, kpi_config
 from src.core.helpers import producto_tiene_traslado
 from src.core.models import ProductoConsolidado, AlertaSeveridad, Alerta, AlertaTipo
 from src.core.constants import COLOR_SIN_COLOR
 from src.ui.logo import logo_base64
+from src.ui.search_overlay import SearchOverlay
 from src.ui.modals.sin_stock_modal import SinStockModal
 from src.ui.modals.traslados_modal import TrasladosModal
 
@@ -28,6 +29,7 @@ class Dashboard:
         self.filtro_alerta = False
 
         self.search_field: ft.TextField | None = None
+        self._search_overlay: SearchOverlay | None = None
         self._alerta_checkbox: ft.Checkbox | None = None
         self.list_container: ft.Column | None = None
         self.kpi_row: ft.Row | None = None
@@ -61,25 +63,37 @@ class Dashboard:
             width=300,
             value=0.0,
         )
+        self._loading_spinner = ft.Column(
+            [
+                ft.Row(
+                    [
+                        ft.ProgressRing(
+                            width=48, height=48,
+                            stroke_width=3,
+                            color=self.p.accent,
+                        ),
+                        ft.Container(width=16),
+                        self._loading_text,
+                    ],
+                    spacing=0,
+                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                ),
+                ft.Container(height=12),
+                self._loading_progress,
+            ],
+            spacing=0,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        )
         self._loading_bar = ft.Container(
             visible=False,
-            content=ft.Column(
-                [
-                    ft.Row(
-                        [
-                            ft.Text("⏳", size=16),
-                            self._loading_text,
-                        ],
-                        spacing=8,
-                    ),
-                    self._loading_progress,
-                ],
-                spacing=4,
-            ),
-            bgcolor="#059669",
-            padding=ft.Padding(left=16, right=16, top=10, bottom=10),
-            border_radius=8,
+            content=self._loading_spinner,
+            bgcolor=self.p.accent,
+            padding=ft.Padding(left=24, right=24, top=16, bottom=16),
+            border_radius=12,
             animate_opacity=200,
+            shadow=[
+                ft.BoxShadow(blur_radius=12, spread_radius=-2, color="rgba(0,0,0,0.15)", offset=ft.Offset(0, 4)),
+            ],
         )
 
     def set_on_sku_click(self, callback):
@@ -114,6 +128,8 @@ class Dashboard:
     def set_source1_raw(self, data: dict[str, dict[str, dict]]):
         self.source1_raw = data
         self._active_warehouse = None
+        if self._search_overlay:
+            self._search_overlay.source1_raw = data
         if self._warehouse_sidebar is not None:
             self._refresh_sidebar()
 
@@ -148,7 +164,7 @@ class Dashboard:
             visible=False,
             expand=True,
             padding=20,
-            alignment=ft.Alignment.CENTER,
+            alignment=ft.alignment.center,
         )
 
     # Column definitions shared by header & cards
@@ -181,15 +197,20 @@ class Dashboard:
     def build(self) -> ft.Container:
         # Initialize overlay loading (centrado, no ocupa espacio en layout)
         self._init_overlay_loading()
+        self._search_overlay = SearchOverlay(
+            self.page, self.p, self.productos, self.source1_raw,
+            on_select=self._on_sku_click,
+        )
         self.search_field = ft.TextField(
             hint_text="Buscar SKU o descripcion...",
             prefix_icon=ft.Icons.SEARCH,
             border_radius=12,
             filled=True,
             bgcolor=self.p.input_bg,
-            border=ft.Border.all(1, self.p.border),
+            border=ft.Border(top=ft.BorderSide(1, self.p.border), left=ft.BorderSide(1, self.p.border), right=ft.BorderSide(1, self.p.border), bottom=ft.BorderSide(1, self.p.border)),
             text_size=14,
             on_change=self._on_search_change,
+            on_focus=self._on_search_focus,
             expand=True,
         )
 
@@ -207,16 +228,6 @@ class Dashboard:
                 self._build_header_row(),
                 self._build_product_list(),
                 self._build_pagination(),
-                ft.Container(
-                    content=ft.Text(
-                        "powered by G360",
-                        size=11,
-                        color=self.p.text_secondary,
-                        weight=ft.FontWeight.W_400,
-                    ),
-                    padding=ft.Padding(top=8),
-                    alignment=ft.Alignment.CENTER,
-                ),
             ],
             spacing=12,
             scroll=ft.ScrollMode.AUTO,
@@ -242,74 +253,98 @@ class Dashboard:
         )
 
     def _build_header(self):
+        brand = ft.Row(
+            [
+                ft.Image(
+                    src=logo_base64("dark" if self.modo == Modo.DARK else "light"),
+                    width=105, height=35, fit=ft.ImageFit.CONTAIN,
+                ),
+                ft.Container(width=12),
+                ft.Column(
+                    [
+                        ft.Text("Stock Consolidator", size=18, weight=ft.FontWeight.BOLD, color=self.p.text),
+                        ft.Container(height=2),
+                        ft.Text("CIPSA · ERP Stock Colors", size=11, color=self.p.text_secondary),
+                    ],
+                    spacing=0,
+                ),
+                ft.Container(width=16),
+            ],
+            spacing=0,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
+        actions = ft.Row(
+            [
+                ft.Button(
+                    "S1 - Stock",
+                    icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED,
+                    style=ft.ButtonStyle(
+                        color={"": "#ffffff"},
+                        bgcolor={"": "#059669", "hovered": "#047857"},
+                        shape=ft.RoundedRectangleBorder(radius=10),
+                        padding=ft.Padding(left=16, right=16, top=12, bottom=12),
+                    ),
+                    on_click=self._on_load_source1,
+                    tooltip="Descargar Source 1 (stock) desde el ERP",
+                ),
+                ft.Container(width=6),
+                ft.Button(
+                    "S2 - Color",
+                    icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED,
+                    style=ft.ButtonStyle(
+                        color={"": "#ffffff"},
+                        bgcolor={"": "#059669", "hovered": "#047857"},
+                        shape=ft.RoundedRectangleBorder(radius=10),
+                        padding=ft.Padding(left=16, right=16, top=12, bottom=12),
+                    ),
+                    on_click=self._on_load_source2,
+                    tooltip="Descargar Source 2 (colores) desde el ERP",
+                ),
+                ft.Container(width=6),
+                ft.IconButton(
+                    icon=ft.Icons.FILE_OPEN,
+                    icon_size=20,
+                    icon_color=self.p.text_secondary,
+                    on_click=self._on_load_source2_manual,
+                    tooltip="Cargar Source 2 manual desde archivo .xls/.xlsx",
+                ),
+                ft.Container(width=2),
+                ft.IconButton(
+                    icon=ft.Icons.LOCK_OUTLINE,
+                    icon_size=20,
+                    icon_color=self.p.text_secondary,
+                    on_click=lambda _: self._on_credentials() if self._on_credentials else None,
+                    tooltip="Configurar credenciales ERP",
+                ),
+                ft.Container(width=2),
+                ft.IconButton(
+                    icon=ft.Icons.DOWNLOAD,
+                    icon_size=20,
+                    icon_color=self.p.text_secondary,
+                    on_click=self._on_download_report,
+                    tooltip="Descargar reporte XLSX",
+                ),
+                ft.Container(width=2),
+                ft.IconButton(
+                    icon=ft.Icons.LIGHT_MODE if self.modo == Modo.DARK else ft.Icons.DARK_MODE,
+                    icon_size=20,
+                    icon_color=self.p.text_secondary,
+                    on_click=self._on_toggle_theme,
+                    tooltip="Cambiar tema claro/oscuro",
+                ),
+            ],
+            spacing=0,
+            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+        )
+
         return ft.Container(
-            content=ft.Row(
-                [
-                    ft.Image(
-                        src=logo_base64("dark" if self.modo == Modo.DARK else "light"),
-                        width=105, height=35, fit=ft.BoxFit.CONTAIN,
-                    ),
-                    ft.Text("Stock Consolidator", size=20, weight=ft.FontWeight.BOLD, color=self.p.text),
-                    ft.Container(expand=True),
-                    ft.Button(
-                        "S1 - Stock",
-                        icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED,
-                        style=ft.ButtonStyle(
-                            color={"": "#ffffff"},
-                            bgcolor={"": "#059669", "hovered": "#047857"},
-                            shape=ft.RoundedRectangleBorder(radius=10),
-                            padding=ft.Padding(left=16, right=16, top=12, bottom=12),
-                        ),
-                        on_click=self._on_load_source1,
-                        tooltip="Descargar Source 1 (stock) desde el ERP",
-                    ),
-                    ft.Container(width=6),
-                    ft.Button(
-                        "S2 - Color",
-                        icon=ft.Icons.CLOUD_DOWNLOAD_OUTLINED,
-                        style=ft.ButtonStyle(
-                            color={"": "#ffffff"},
-                            bgcolor={"": "#059669", "hovered": "#047857"},
-                            shape=ft.RoundedRectangleBorder(radius=10),
-                            padding=ft.Padding(left=16, right=16, top=12, bottom=12),
-                        ),
-                        on_click=self._on_load_source2,
-                        tooltip="Descargar Source 2 (colores) desde el ERP",
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.FILE_OPEN,
-                        icon_size=20,
-                        icon_color=self.p.text_secondary,
-                        on_click=self._on_load_source2_manual,
-                        tooltip="Cargar Source 2 manual desde archivo .xls/.xlsx",
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.LOCK_OUTLINE,
-                        icon_size=20,
-                        icon_color=self.p.text_secondary,
-                        on_click=lambda _: self._on_credentials() if self._on_credentials else None,
-                        tooltip="Configurar credenciales ERP",
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.DOWNLOAD,
-                        icon_size=20,
-                        icon_color=self.p.text_secondary,
-                        on_click=self._on_download_report,
-                        tooltip="Descargar reporte XLSX",
-                    ),
-                    ft.IconButton(
-                        icon=ft.Icons.LIGHT_MODE if self.modo == Modo.DARK else ft.Icons.DARK_MODE,
-                        icon_size=20,
-                        icon_color=self.p.text_secondary,
-                        on_click=self._on_toggle_theme,
-                        tooltip="Cambiar tema claro/oscuro",
-                    ),
-                ],
-                spacing=0,
-                alignment=ft.MainAxisAlignment.START,
-                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            content=ft.Column(
+                [brand, actions],
+                spacing=8,
             ),
-            padding=ft.Padding(left=0, right=0, top=10, bottom=10),
+            padding=ft.Padding(left=4, right=4, top=12, bottom=12),
+            border=ft.Border(bottom=ft.BorderSide(1, self.p.border)),
         )
 
     def _build_kpi_cards(self):
@@ -344,10 +379,10 @@ class Dashboard:
             is_active = self._filtro_kpi == kpi_key
             if e.data == "true":
                 card.bgcolor = (c + "65" if is_dark else c + "45") if is_active else base_hover
-                card.border = ft.Border.all(2, c if is_active else border_hov)
+                card.border = ft.Border(top=ft.BorderSide(2, c if is_active else border_hov), left=ft.BorderSide(2, c if is_active else border_hov), right=ft.BorderSide(2, c if is_active else border_hov), bottom=ft.BorderSide(2, c if is_active else border_hov))
             else:
                 card.bgcolor = active_a if is_active else base_idle
-                card.border = ft.Border.all(1.5, c if is_active else border_off)
+                card.border = ft.Border(top=ft.BorderSide(1.5, c if is_active else border_off), left=ft.BorderSide(1.5, c if is_active else border_off), right=ft.BorderSide(1.5, c if is_active else border_off), bottom=ft.BorderSide(1.5, c if is_active else border_off))
             self.page.update()
 
         icon_pad = 8 if compact else 12
@@ -385,7 +420,7 @@ class Dashboard:
             ),
             bgcolor=base_idle,
             border_radius=14,
-            border=ft.Border.all(1.5, border_off),
+            border=ft.Border(top=ft.BorderSide(1.5, border_off), left=ft.BorderSide(1.5, border_off), right=ft.BorderSide(1.5, border_off), bottom=ft.BorderSide(1.5, border_off)),
             shadow=[
                 ft.BoxShadow(blur_radius=8, spread_radius=-2, color=c + "0C", offset=ft.Offset(0, 2)),
                 ft.BoxShadow(blur_radius=16, spread_radius=-4, color=c + "08", offset=ft.Offset(0, 6)),
@@ -418,22 +453,38 @@ class Dashboard:
             tooltip="Expandir/Contraer todo",
         )
 
-        return ft.Container(
-            content=ft.Row(
-                [
-                    self.search_field,
-                    ft.Container(width=10),
-                    ft.Container(
-                        content=self._toggle_expand_btn,
-                        bgcolor=self.p.surface,
-                        border_radius=8,
-                        border=ft.Border.all(1, self.p.glass_border),
-                        padding=2,
-                    ),
-                    ft.Container(width=10),
-                    self._alerta_checkbox,
-                ],
-            ),
+        search_overlay = self._search_overlay.build()
+        search_area = ft.Stack(
+            [
+                self.search_field,
+                ft.Container(
+                    content=search_overlay,
+                    top=44,
+                    left=0,
+                ),
+            ],
+            expand=True,
+        )
+
+        return ft.Column(
+            [
+                ft.Row(
+                    [
+                        search_area,
+                        ft.Container(width=10),
+                        ft.Container(
+                            content=self._toggle_expand_btn,
+                            bgcolor=self.p.surface,
+                            border_radius=8,
+                            border=ft.Border(top=ft.BorderSide(1, self.p.glass_border), left=ft.BorderSide(1, self.p.glass_border), right=ft.BorderSide(1, self.p.glass_border), bottom=ft.BorderSide(1, self.p.glass_border)),
+                            padding=2,
+                        ),
+                        ft.Container(width=10),
+                        self._alerta_checkbox,
+                    ],
+                ),
+            ],
+            spacing=0,
         )
 
     def _make_sidebar_controls(self) -> list[ft.Control]:
@@ -482,9 +533,7 @@ class Dashboard:
                 ),
                 bgcolor=self.p.accent + "18" if is_active else self.p.surface_hover,
                 border_radius=10,
-                border=ft.Border.all(
-                    1.5, self.p.accent if is_active else self.p.border
-                ),
+                border=ft.Border(top=ft.BorderSide(1.5, self.p.accent if is_active else self.p.border), left=ft.BorderSide(1.5, self.p.accent if is_active else self.p.border), right=ft.BorderSide(1.5, self.p.accent if is_active else self.p.border), bottom=ft.BorderSide(1.5, self.p.accent if is_active else self.p.border)),
                 padding=ft.Padding(left=12, right=12, top=10, bottom=10),
                 on_click=lambda _, c=code: self._on_warehouse_sidebar_click(c),
                 animate=ft.Animation(150, "ease"),
@@ -523,7 +572,7 @@ class Dashboard:
             ),
             padding=ft.Padding(left=10, right=10, top=6, bottom=6),
             border_radius=8,
-            border=ft.Border.all(1, self.p.accent + "40"),
+            border=ft.Border(top=ft.BorderSide(1, self.p.accent + "40"), left=ft.BorderSide(1, self.p.accent + "40"), right=ft.BorderSide(1, self.p.accent + "40"), bottom=ft.BorderSide(1, self.p.accent + "40")),
             on_click=lambda _: self._on_clear_filter(),
             tooltip="Limpiar todos los filtros activos",
         )
@@ -541,8 +590,8 @@ class Dashboard:
         is_dark = self.modo == Modo.DARK
         opts = [
             ("todos", "Todos", ft.Icons.FILTER_ALT, self.p.accent),
-            ("con", "Con color", ft.Icons.PALETTE, "#2E7D32"),
-            ("sin", "S/C", ft.Icons.INVERT_COLORS_OFF, "#E65100"),
+            ("con", "Con color", ft.Icons.PALETTE, self.p.success),
+            ("sin", "S/C", ft.Icons.INVERT_COLORS_OFF, self.p.warning),
         ]
         color_tooltips = {"todos": "Mostrar todos los productos", "con": "Solo productos con color asignado", "sin": "Solo productos sin color"}
         btns = []
@@ -565,7 +614,7 @@ class Dashboard:
                     ),
                     bgcolor=bg,
                     border_radius=8,
-                    border=ft.Border.all(1, color if sel else self.p.border),
+                    border=ft.Border(top=ft.BorderSide(1, color if sel else self.p.border), left=ft.BorderSide(1, color if sel else self.p.border), right=ft.BorderSide(1, color if sel else self.p.border), bottom=ft.BorderSide(1, color if sel else self.p.border)),
                     padding=ft.Padding(left=10, right=10, top=6, bottom=6),
                     on_click=lambda _, v=val: self._on_color_filter_change(v),
                     tooltip=color_tooltips.get(val, ""),
@@ -584,7 +633,7 @@ class Dashboard:
             width=170,
             bgcolor=self.p.surface,
             border_radius=12,
-            border=ft.Border.all(1, self.p.glass_border),
+            border=ft.Border(top=ft.BorderSide(1, self.p.glass_border), left=ft.BorderSide(1, self.p.glass_border), right=ft.BorderSide(1, self.p.glass_border), bottom=ft.BorderSide(1, self.p.glass_border)),
             padding=ft.Padding(left=4, right=4, top=0, bottom=8),
         )
 
@@ -660,7 +709,7 @@ class Dashboard:
             padding=ft.Padding(left=12, right=12, top=8, bottom=8),
             bgcolor=self.p.surface_hover,
             border_radius=8,
-            border=ft.Border.all(1, self.p.border),
+            border=ft.Border(top=ft.BorderSide(1, self.p.border), left=ft.BorderSide(1, self.p.border), right=ft.BorderSide(1, self.p.border), bottom=ft.BorderSide(1, self.p.border)),
         )
         self._header_container = container
         return container
@@ -709,7 +758,7 @@ class Dashboard:
         return ft.Container(
             content=self.list_container,
             border_radius=12,
-            border=ft.Border.all(1, self.p.glass_border),
+            border=ft.Border(top=ft.BorderSide(1, self.p.glass_border), left=ft.BorderSide(1, self.p.glass_border), right=ft.BorderSide(1, self.p.glass_border), bottom=ft.BorderSide(1, self.p.glass_border)),
             bgcolor=self.p.surface,
             padding=ft.Padding(left=6, right=6, top=6, bottom=6),
         )
@@ -795,7 +844,7 @@ class Dashboard:
             content=row_content,
             padding=ft.Padding(left=12, right=12, top=10, bottom=10),
             border_radius=8,
-            border=ft.Border.all(1, self.p.border),
+            border=ft.Border(top=ft.BorderSide(1, self.p.border), left=ft.BorderSide(1, self.p.border), right=ft.BorderSide(1, self.p.border), bottom=ft.BorderSide(1, self.p.border)),
             bgcolor=self.p.surface_hover if is_expanded else self.p.surface,
             shadow=ft.BoxShadow(
                 spread_radius=0,
@@ -891,15 +940,31 @@ class Dashboard:
         )
 
         dlg = ft.AlertDialog(
+            modal=False,
             title=ft.Text(f"Detalle por almacén — {sku}"),
             content=ft.Column([header] + rows, tight=True, spacing=2, width=340),
             actions=[ft.TextButton("Cerrar", on_click=lambda _: self._close_warehouse_dlg(dlg), tooltip="Cerrar detalle de almacén")],
+            bgcolor=self.p.surface,
+            shape=ft.RoundedRectangleBorder(radius=16),
         )
-        self.page.show_dialog(dlg)
+        overlay = ft.Container(
+            content=dlg,
+            bgcolor="rgba(0,0,0,0.4)",
+            expand=True,
+            on_click=lambda _: self._close_warehouse_dlg(dlg),
+            on_hover=lambda e: None,
+        )
+        self.page._active_dialog = dlg
+        self.page.overlay.append(overlay)
+        dlg.open = True
         self.page.update()
 
     def _close_warehouse_dlg(self, dlg):
-        self.page.pop_dialog()
+        dlg.open = False
+        for ctrl in list(self.page.overlay):
+            if isinstance(ctrl, ft.Container) and ctrl.content == dlg:
+                self.page.overlay.remove(ctrl)
+                break
         self.page.update()
 
     def _on_card_hover(self, e, sku: str):
@@ -941,7 +1006,7 @@ class Dashboard:
 
     def _show_toast(self, msg: str):
         snack = ft.SnackBar(content=ft.Text(msg), duration=3000)
-        self.page.overlay.append(snack)
+        self.page.snack_bar = snack
         snack.open = True
         self.page.update()
 
@@ -1005,7 +1070,7 @@ class Dashboard:
                     width=26, height=26,
                     border_radius=5,
                     bgcolor=self.p.accent + "18" if i == self.current_page else "transparent",
-                    alignment=ft.Alignment.CENTER,
+                    alignment=ft.alignment.center,
                     on_click=lambda _, pg=i: self._go_to_page(pg),
                     tooltip=f"Ir a página {i + 1}",
                 ),
@@ -1023,6 +1088,9 @@ class Dashboard:
         self.productos = productos
         self._post_process_alertas()
         self.expanded = set()
+        if self._search_overlay:
+            self._search_overlay.productos = productos
+            self._search_overlay.source1_raw = self.source1_raw
         self._refresh_sidebar()
         self._apply_filters()
         self._refresh_list()
@@ -1116,6 +1184,15 @@ class Dashboard:
         self.search_query = e.control.value.strip().lower()
         self.current_page = 0
         self._refresh_list()
+        if self._search_overlay:
+            self._search_overlay.search(e.control.value)
+
+    def _on_search_focus(self, e):
+        if e.data == "true" and self.search_field and self.search_field.value:
+            self._search_overlay.search(self.search_field.value)
+        elif e.data == "false":
+            if self._search_overlay:
+                self._search_overlay.hide()
 
     def _on_clear_filter(self):
         self._active_warehouse = None
@@ -1220,7 +1297,7 @@ class Dashboard:
             is_active = self._filtro_kpi == cfg.key
             active_a = cfg.color + ("65" if is_dark else "45")
             card.bgcolor = active_a if is_active else cfg.idle_bg
-            card.border = ft.Border.all(1.5, cfg.color if is_active else (cfg.color + "30" if is_dark else cfg.color + "18"))
+            card.border = ft.Border(top=ft.BorderSide(1.5, cfg.color if is_active else (cfg.color + "30" if is_dark else cfg.color + "18")), left=ft.BorderSide(1.5, cfg.color if is_active else (cfg.color + "30" if is_dark else cfg.color + "18")), right=ft.BorderSide(1.5, cfg.color if is_active else (cfg.color + "30" if is_dark else cfg.color + "18")), bottom=ft.BorderSide(1.5, cfg.color if is_active else (cfg.color + "30" if is_dark else cfg.color + "18")))
         self.page.update()
 
 

@@ -11,6 +11,7 @@ class SkuDetailModal:
         self.producto = producto
         self.p = paleta
         self.dialog: ft.AlertDialog | None = None
+        self._overlay: ft.Container | None = None
 
     def show(self):
         content = ft.Container(
@@ -31,7 +32,7 @@ class SkuDetailModal:
         )
 
         self.dialog = ft.AlertDialog(
-            modal=True,
+            modal=False,
             content=content,
             actions=[
                 ft.TextButton(
@@ -46,11 +47,24 @@ class SkuDetailModal:
             shape=ft.RoundedRectangleBorder(radius=16),
         )
 
-        self.page.show_dialog(self.dialog)
+        self._overlay = ft.Container(
+            content=self.dialog,
+            bgcolor="rgba(0,0,0,0.4)",
+            expand=True,
+            on_click=self._close,
+            on_hover=lambda e: None,
+        )
+
+        self.page._active_dialog = self.dialog
+        self.page.overlay.append(self._overlay)
+        self.dialog.open = True
         self.page.update()
 
-    def _close(self, e):
-        self.page.pop_dialog()
+    def _close(self, e=None):
+        if self.dialog:
+            self.dialog.open = False
+        if hasattr(self, '_overlay') and self._overlay and self._overlay in self.page.overlay:
+            self.page.overlay.remove(self._overlay)
         self.page.update()
 
     def _header_info(self):
@@ -90,7 +104,7 @@ class SkuDetailModal:
                 ),
                 bgcolor=bg,
                 border_radius=10,
-                border=ft.Border.all(1, border_col),
+                border=ft.Border(top=ft.BorderSide(1, border_col), left=ft.BorderSide(1, border_col), right=ft.BorderSide(1, border_col), bottom=ft.BorderSide(1, border_col)),
                 padding=ft.Padding(left=20, right=20, top=12, bottom=12),
             )
 
@@ -144,7 +158,7 @@ class SkuDetailModal:
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    padding=ft.Padding(left=24, top=2, bottom=2),
+                    padding=ft.Padding(left=24, right=0, top=2, bottom=2),
                 )
             )
 
@@ -180,7 +194,7 @@ class SkuDetailModal:
             ),
             bgcolor=self.p.glass_bg,
             border_radius=10,
-            border=ft.Border.all(1, self.p.glass_border),
+            border=ft.Border(top=ft.BorderSide(1, self.p.glass_border), left=ft.BorderSide(1, self.p.glass_border), right=ft.BorderSide(1, self.p.glass_border), bottom=ft.BorderSide(1, self.p.glass_border)),
             padding=ft.Padding(left=12, right=12, top=12, bottom=12),
         )
 

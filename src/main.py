@@ -49,12 +49,12 @@ def _validar_archivo_source2(path: str) -> bool:
 
 
 def _close_dlg(page: ft.Page, extra_cb=None):
-    page.pop_dialog()
+    dlg = getattr(page, '_active_dialog', None)
+    if dlg:
+        page.close(dlg)
     page.update()
     if callable(extra_cb):
-        r = extra_cb()
-        if hasattr(r, "__await__"):
-            asyncio.create_task(r)
+        page.run_task(extra_cb)
 
 
 def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retry_creds=None, on_manual_file=None):
@@ -90,7 +90,9 @@ def _show_error(page: ft.Page, title: str, ex: Exception, close_cb=None, on_retr
         content=ft.Text(message),
         actions=actions,
     )
-    page.show_dialog(dlg)
+    page._active_dialog = dlg
+    page.open(dlg)
+    dlg.open = True
     page.update()
 
 
@@ -105,18 +107,25 @@ class StockConsolidatorApp:
         self._creds: dict[str, str] = self._load_cached_credentials()
         self._setup_window()
         self._build()
-        self._show_credentials_dialog()
 
     def _setup_window(self):
         self.page.title = "Stock Color Consolidator - CIPSA"
         self.page.theme_mode = ft.ThemeMode.LIGHT
         self.page.padding = 0
-        self.page.window.width = WINDOW_WIDTH
-        self.page.window.height = WINDOW_HEIGHT
-        self.page.window.min_width = WINDOW_MIN_WIDTH
-        self.page.window.min_height = WINDOW_MIN_HEIGHT
-        self.page.run_task(self.page.window.center)
+        self.page.window_width = WINDOW_WIDTH
+        self.page.window_height = WINDOW_HEIGHT
+        self.page.window_min_width = WINDOW_MIN_WIDTH
+        self.page.window_min_height = WINDOW_MIN_HEIGHT
+        self.page.on_keyboard_event = self._on_keyboard
+        try:
+            self.page.window_center()
+        except AttributeError:
+            pass
         self.page.bgcolor = LIGHT.bg
+
+    def _on_keyboard(self, e: ft.KeyboardEvent):
+        if self.dashboard and self.dashboard._search_overlay:
+            self.dashboard._search_overlay.on_key(e)
 
     def _build(self):
         paleta = DARK if self.modo == Modo.DARK else LIGHT
@@ -144,6 +153,10 @@ class StockConsolidatorApp:
         # Cargamos productos
         self.dashboard.set_productos(self.productos)
         self.page.update()
+
+        # Mostrar dialog de credenciales en la primera ejecucion (sin usuario cacheado)
+        if not self._creds.get("user"):
+            self._schedule_credentials_dialog()
 
     def _on_expand_all(self, expand: bool):
         if self.dashboard:
@@ -214,6 +227,7 @@ class StockConsolidatorApp:
         download_dir: str | None = None
         os.environ["G360_S2_USER"] = self._creds.get("user", "")
         os.environ["G360_S2_PASS"] = self._creds.get("pass", "")
+        self._show_toast("Iniciando descarga Source 2...")
         self.dashboard.set_loading(True, "Descargando Source 2 (ERP)...")
         try:
             path = await browser_download_source2(
@@ -318,7 +332,8 @@ class StockConsolidatorApp:
                 ft.Button("Descargar", on_click=lambda _: self._close_dialog(on_confirm), tooltip="Confirmar y descargar"),
             ],
         )
-        self.page.show_dialog(dlg)
+        self.page._active_dialog = dlg
+        self.page.open(dlg)
         self.page.update()
 
     def _limpiar_descarga(self, download_dir: str | None):
@@ -341,10 +356,18 @@ class StockConsolidatorApp:
         safe = {"user": self._creds.get("user", "")}
         CREDENTIALS_FILE.write_text(json.dumps(safe))
 
+    async def _show_credentials_dialog_async(self):
+        await asyncio.sleep(0.1)
+        self._show_credentials_dialog()
+
+    def _schedule_credentials_dialog(self):
+        asyncio.ensure_future(self._show_credentials_dialog_async())
+
     def _show_credentials_dialog(self, on_save_callback=None):
         cached_user = self._creds.get("user", "")
 
         error_text = ft.Text("", color=ft.Colors.RED, size=12, visible=False)
+        _dlg_ref = [None]
 
         def _on_save(e=None):
             user = user_field.value.strip()
@@ -358,11 +381,12 @@ class StockConsolidatorApp:
             self._creds["user"] = user
             self._creds["pass"] = pwd
             self._cache_credentials()
-            self._close_dialog()
+            dlg = _dlg_ref[0]
+            if dlg:
+                dlg.open = False
+                self.page.update()
             if callable(on_save_callback):
-                r = on_save_callback()
-                if hasattr(r, "__await__"):
-                    asyncio.create_task(r)
+                self.page.run_task(on_save_callback)
             else:
                 self._show_toast("Credenciales guardadas.")
 
@@ -422,7 +446,9 @@ class StockConsolidatorApp:
             ],
             actions_alignment=ft.MainAxisAlignment.END,
         )
-        self.page.show_dialog(dlg)
+        _dlg_ref[0] = dlg
+        self.page._active_dialog = dlg
+        self.page.open(dlg)
         self.page.update()
 
     async def _on_download_report(self):
@@ -444,7 +470,7 @@ class StockConsolidatorApp:
 
     def _show_toast(self, msg: str):
         snack = ft.SnackBar(content=ft.Text(msg), duration=3000)
-        self.page.overlay.append(snack)
+        self.page.snack_bar = snack
         snack.open = True
         self.page.update()
 

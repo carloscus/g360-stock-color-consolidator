@@ -3,46 +3,58 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+.Python
 *.egg-info/
 dist/
 build/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
 
 # Virtual environment
 .venv/
-venv/
-ENV/
 
-# Portable
-*-portable/
-uv.exe
-uvx.exe
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Credentials cache
+%APPDATA%/g360-stock-consolidator/
+creds.json
+
+# Logs
 run_log.txt
+*.log
 
-# IDE / Editor
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
 
-# Environment variables
-.env
-.env.local
+# Playwright
+playwright-report/
+test-results/
+trace.zip
 
-# Logs
-*.log
-
-# OS
-Thumbs.db
-.DS_Store
-desktop.ini
-
-# Project specific
+# Samples
 samples/*.xls
 samples/*.xlsx
+samples/*.csv
 
-# AI coding assistant
-.antigravitycli/
-.kilo/
+# Portable (generated)
+g360-erp-stock-consolidator-portable/
 
-# Temporary generated files
-assets/images/*_b64.txt
+# Build artifacts
+g360-stock-consolidator-portable.zip
+
+# Utilities
+fix_hosts.bat
+uv-install.ps1

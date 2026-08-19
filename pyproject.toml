@@ -1,10 +1,10 @@
 [project]
 name = "g360-stock-color-consolidator"
-version = "1.1.0"
+version = "1.2.0"
 description = "G360 - Stock Color Consolidator: descarga, consolida y genera reportes XLSX de stock con colores."
 requires-python = ">=3.11"
 dependencies = [
-    "flet>=0.23.0",
+    "flet[desktop]==0.28.3",
     "openpyxl>=3.1.0",
     "xlrd>=2.0.0",
     "pandas>=2.0.0",

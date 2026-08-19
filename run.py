@@ -1,6 +1,12 @@
 import sys
 from pathlib import Path
 
+# Forzar uso de certificados del sistema Windows
+try:
+    import pip_system_certs  # noqa: F401
+except ImportError:
+    pass
+
 BASE_DIR = Path(__file__).resolve().parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -10,7 +16,7 @@ from src.main import main
 
 if __name__ == "__main__":
     try:
-        ft.run(main)
+        ft.app(target=main)
     except Exception as e:
         print(f"\n[FATAL] Error al iniciar la aplicacion: {e}", flush=True)
         import traceback
